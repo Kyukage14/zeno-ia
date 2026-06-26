@@ -1,0 +1,2720 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zeno IA</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #080a14;
+  --surface:  #0d0f22;
+  --card:     #141830;
+  --card2:    #1a1e38;
+  --border:   #1e2240;
+  --violet:   #6c63ff;
+  --cyan:     #00d4ff;
+  --white:    #f0f4ff;
+  --muted:    #6b7299;
+  --muted2:   #4a506e;
+  --gradient: linear-gradient(135deg, #6c63ff, #00d4ff);
+  --sidebar-w: 280px;
+}
+
+html, body { height: 100%; overflow: hidden; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--white); }
+
+/* ─── LAYOUT ─── */
+.app { display: flex; height: 100vh; }
+
+/* ─── SIDEBAR ─── */
+.sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width .25s ease, opacity .25s ease;
+}
+
+.sidebar.collapsed { width: 0; opacity: 0; pointer-events: none; }
+
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 20px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar-logo svg { width: 36px; height: 36px; flex-shrink: 0; }
+
+.sidebar-logo-name {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  font-size: 18px;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.sidebar-logo-tagline { font-size: 11px; color: var(--muted); font-weight: 400; white-space: nowrap; }
+
+.new-chat-btn {
+  margin: 16px 16px 10px;
+  padding: 11px 16px;
+  background: var(--gradient);
+  border: none;
+  border-radius: 12px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: opacity .2s, transform .2s;
+  font-family: 'Inter', sans-serif;
+  box-shadow: 0 0 24px rgba(108,99,255,.3);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.new-chat-btn:hover { opacity: .88; transform: translateY(-1px); }
+
+.sidebar-search { position: relative; margin: 0 16px 14px; flex-shrink: 0; }
+
+.sidebar-search input {
+  width: 100%;
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--border);
+  color: var(--white);
+  padding: 9px 14px 9px 36px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  transition: border-color .2s;
+}
+
+.sidebar-search input:focus { border-color: rgba(108,99,255,.5); }
+.sidebar-search input::placeholder { color: var(--muted2); }
+.sidebar-search::before {
+  content: '';
+  position: absolute;
+  left: 12px; top: 50%;
+  transform: translateY(-50%);
+  width: 14px; height: 14px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234a506e' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: contain;
+  pointer-events: none;
+}
+
+.sidebar-section-label { font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted2); padding: 0 20px 8px; flex-shrink: 0; }
+
+.conv-list { flex: 1; overflow-y: auto; padding: 0 10px; }
+.conv-list::-webkit-scrollbar { width: 4px; }
+.conv-list::-webkit-scrollbar-track { background: transparent; }
+.conv-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.conv-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background .15s;
+  margin-bottom: 2px;
+  gap: 8px;
+}
+
+.conv-item:hover { background: rgba(255,255,255,.04); }
+.conv-item.active { background: rgba(108,99,255,.12); }
+
+.conv-item-title {
+  flex: 1;
+  font-size: 13px;
+  color: var(--white);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 400;
+}
+
+.conv-delete {
+  flex-shrink: 0;
+  color: var(--muted2);
+  font-size: 14px;
+  opacity: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  transition: opacity .15s, color .15s;
+  line-height: 1;
+}
+
+.conv-item:hover .conv-delete { opacity: 1; }
+.conv-delete:hover { color: #ff6b6b; }
+
+/* ─── ACCOUNT ─── */
+.account-section { border-top: 1px solid var(--border); padding: 14px 16px; background: rgba(0,0,0,.2); flex-shrink: 0; }
+
+.account-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  border-radius: 12px;
+  padding: 8px;
+  transition: background .15s;
+}
+
+.account-header:hover { background: rgba(255,255,255,.04); }
+
+.account-avatar {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  background: var(--gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 15px;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.account-avatar.expert {
+  background: linear-gradient(135deg, #f7971e, #ffd200);
+  box-shadow: 0 0 16px rgba(255,210,0,.35);
+}
+
+.account-info { flex: 1; min-width: 0; }
+.account-name { font-size: 13px; font-weight: 600; color: var(--white); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.account-plan { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+
+.plan-badge { background: rgba(108,99,255,.2); border: 1px solid rgba(108,99,255,.3); color: var(--violet); font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 100px; letter-spacing: .04em; }
+.plan-badge.expert { background: rgba(255,210,0,.15); border-color: rgba(255,210,0,.4); color: #ffd200; }
+
+.account-expand { color: var(--muted); font-size: 12px; }
+
+.account-dropdown { display: none; margin-top: 10px; background: var(--card2); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.account-dropdown.open { display: block; }
+
+.account-info-row { padding: 14px 16px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); line-height: 1.6; }
+.account-info-row strong { display: block; font-size: 13px; color: var(--white); font-weight: 500; margin-bottom: 4px; }
+
+.expert-banner {
+  margin: 10px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(247,151,30,.15), rgba(255,210,0,.1));
+  border: 1px solid rgba(255,210,0,.3);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--white);
+  line-height: 1.5;
+}
+
+.expert-banner strong {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 4px;
+  color: #ffd200;
+}
+
+.upgrade-banner {
+  margin: 10px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(108,99,255,.15), rgba(0,212,255,.1));
+  border: 1px solid rgba(108,99,255,.25);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--white);
+  line-height: 1.5;
+}
+
+.upgrade-banner strong {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 6px;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.upgrade-btn {
+  width: calc(100% - 20px);
+  margin: 0 10px 10px;
+  padding: 10px;
+  background: var(--gradient);
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  transition: opacity .2s;
+}
+
+.upgrade-btn:hover { opacity: .88; }
+
+.account-actions { border-top: 1px solid var(--border); }
+
+.account-action-btn {
+  width: 100%;
+  padding: 11px 16px;
+  background: none;
+  border: none;
+  text-align: left;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  transition: background .15s, color .15s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-action-btn:hover { background: rgba(255,255,255,.04); color: var(--white); }
+
+/* ─── MAIN ─── */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+
+/* ─── HEADER ─── */
+.chat-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  background: var(--surface);
+}
+
+.sidebar-toggle {
+  width: 34px; height: 34px;
+  border-radius: 9px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background .15s, color .15s;
+}
+
+.sidebar-toggle:hover { background: rgba(108,99,255,.12); color: var(--white); }
+
+.sidebar-toggle svg { width: 16px; height: 16px; }
+
+.chat-header-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--white);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-right { display: flex; align-items: center; gap: 10px; }
+
+.mode-select {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--white);
+  padding: 7px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  outline: none;
+  transition: border-color .2s;
+}
+
+.mode-select:focus { border-color: rgba(108,99,255,.5); }
+
+/* ─── WELCOME ─── */
+#welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+}
+
+.welcome-logo svg {
+  width: 72px; height: 72px;
+  filter: drop-shadow(0 0 28px rgba(108,99,255,.5));
+  animation: floatLogo 4s ease-in-out infinite;
+  margin-bottom: 24px;
+}
+
+@keyframes floatLogo { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+
+.welcome-name {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 44px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 10px;
+}
+
+.welcome-tagline { font-size: 16px; color: var(--muted); font-weight: 300; max-width: 360px; line-height: 1.6; }
+
+/* ─── CHAT ─── */
+#chat { flex: 1; overflow-y: auto; padding: 28px 0; display: none; }
+#chat::-webkit-scrollbar { width: 4px; }
+#chat::-webkit-scrollbar-track { background: transparent; }
+#chat::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.msg-wrap { max-width: 760px; margin: 0 auto; padding: 0 28px; display: flex; flex-direction: column; gap: 24px; }
+
+.message { display: flex; gap: 14px; align-items: flex-start; }
+
+.msg-avatar {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.msg-avatar.user { background: var(--gradient); color: #fff; }
+.msg-avatar.ai { background: rgba(108,99,255,.15); border: 1px solid rgba(108,99,255,.3); }
+.msg-avatar.ai svg { width: 18px; height: 18px; }
+
+.msg-body { flex: 1; }
+.msg-sender { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; letter-spacing: .04em; text-transform: uppercase; }
+
+.msg-bubble { font-size: 14px; line-height: 1.75; color: var(--white); }
+
+.message.user .msg-bubble {
+  background: rgba(108,99,255,.1);
+  border: 1px solid rgba(108,99,255,.2);
+  border-radius: 4px 16px 16px 16px;
+  padding: 14px 18px;
+  display: inline-block;
+  max-width: 100%;
+}
+
+/* image preview in bubble */
+.msg-bubble img { max-width: 100%; border-radius: 10px; margin-top: 8px; display: block; }
+
+/* code blocks */
+.msg-bubble pre {
+  background: #0a0c1e;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 10px 0;
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: 'Fira Code', 'Courier New', monospace;
+  position: relative;
+}
+
+.copy-code-btn {
+  position: absolute;
+  top: 8px; right: 8px;
+  background: rgba(108,99,255,.25);
+  border: none;
+  color: var(--white);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+}
+
+.copy-code-btn:hover { background: rgba(108,99,255,.45); }
+
+/* generated image card */
+.gen-img-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  max-width: 400px;
+  margin-top: 10px;
+}
+
+.gen-img-card img { width: 100%; display: block; }
+.gen-img-card-footer { padding: 10px 14px; font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; align-items: center; }
+
+/* ─── THINKING ─── */
+#thinking { display: none; padding: 0 28px; max-width: 760px; margin: 0 auto 8px; }
+.thinking-inner { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+.thinking-dots { display: flex; gap: 4px; }
+.thinking-dots span { width: 6px; height: 6px; background: var(--violet); border-radius: 50%; animation: bounce 1.2s infinite; }
+.thinking-dots span:nth-child(2) { animation-delay: .2s; }
+.thinking-dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes bounce { 0%,80%,100% { transform: scale(.6); opacity: .4; } 40% { transform: scale(1); opacity: 1; } }
+
+/* ─── ATTACHMENT PREVIEW ─── */
+#attachment-preview {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 28px;
+  display: none;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+
+.attach-chip {
+  background: rgba(108,99,255,.15);
+  border: 1px solid rgba(108,99,255,.3);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--white);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.attach-chip img { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; }
+
+.attach-chip-remove {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+  line-height: 1;
+}
+
+.attach-chip-remove:hover { color: #ff6b6b; }
+
+/* ─── INPUT BAR ─── */
+.input-bar { padding: 12px 28px 18px; border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+
+.input-wrap {
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 6px 6px 6px 6px;
+  transition: border-color .2s, box-shadow .2s;
+  position: relative;
+}
+
+.input-wrap:focus-within { border-color: rgba(108,99,255,.5); box-shadow: 0 0 0 3px rgba(108,99,255,.08); }
+
+/* Plus button */
+.plus-btn {
+  width: 38px; height: 38px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+  transition: background .15s, color .15s;
+  position: relative;
+}
+
+.plus-btn:hover { background: rgba(108,99,255,.15); color: var(--white); }
+
+/* Plus dropdown */
+.plus-dropdown {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  min-width: 210px;
+  display: none;
+  z-index: 50;
+  box-shadow: 0 8px 32px rgba(0,0,0,.4);
+}
+
+.plus-dropdown.open { display: block; }
+
+.plus-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--white);
+  transition: background .15s;
+  border: none;
+  background: none;
+  width: 100%;
+  font-family: 'Inter', sans-serif;
+  text-align: left;
+}
+
+.plus-option:hover { background: rgba(108,99,255,.1); }
+
+.plus-option-icon {
+  width: 32px; height: 32px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.plus-option-icon.img-icon { background: rgba(0,212,255,.12); }
+.plus-option-icon.file-icon { background: rgba(108,99,255,.12); }
+.plus-option-icon.gen-icon { background: linear-gradient(135deg, rgba(108,99,255,.2), rgba(255,210,0,.15)); }
+
+.plus-option-text { display: flex; flex-direction: column; }
+.plus-option-label { font-weight: 500; font-size: 13px; }
+.plus-option-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+.divider-line { height: 1px; background: var(--border); margin: 0 12px; }
+
+.input-wrap input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--white);
+  font-size: 14px;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  padding: 10px 8px;
+}
+
+.input-wrap input::placeholder { color: var(--muted2); }
+
+.send-btn {
+  width: 42px; height: 42px;
+  border-radius: 12px;
+  background: var(--gradient);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 18px;
+  transition: opacity .2s, transform .2s;
+  box-shadow: 0 0 16px rgba(108,99,255,.4);
+  flex-shrink: 0;
+}
+
+.send-btn:hover { opacity: .88; transform: scale(1.06); }
+
+.input-hint { text-align: center; font-size: 11px; color: var(--muted2); margin-top: 8px; max-width: 760px; margin-left: auto; margin-right: auto; }
+
+/* ─── GEN IMAGE MODAL ─── */
+.gen-modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.7);
+  backdrop-filter: blur(8px);
+  z-index: 200;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.gen-modal-overlay.open { display: flex; }
+
+.gen-modal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 36px 32px;
+  width: 460px;
+  position: relative;
+}
+
+.gen-modal h3 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.gen-modal p { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+
+.gen-modal textarea {
+  width: 100%;
+  background: rgba(255,255,255,.05);
+  border: 1px solid var(--border);
+  color: var(--white);
+  padding: 13px 16px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  resize: none;
+  height: 100px;
+  transition: border-color .2s;
+  margin-bottom: 14px;
+}
+
+.gen-modal textarea:focus { border-color: rgba(108,99,255,.5); }
+.gen-modal textarea::placeholder { color: var(--muted2); }
+
+.gen-modal-close {
+  position: absolute; top: 16px; right: 16px;
+  background: transparent; border: none; color: var(--muted); font-size: 22px; cursor: pointer; line-height: 1;
+}
+
+.gen-modal-submit {
+  width: 100%;
+  padding: 13px;
+  background: var(--gradient);
+  border: none;
+  border-radius: 12px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  transition: opacity .2s;
+}
+
+.gen-modal-submit:hover { opacity: .88; }
+.gen-modal-submit:disabled { opacity: .5; cursor: not-allowed; }
+
+/* hidden file input */
+#file-input-image { display: none; }
+#file-input-doc   { display: none; }
+
+/* toast */
+.toast {
+  position: fixed;
+  bottom: 28px; right: 28px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 20px;
+  font-size: 14px;
+  color: var(--white);
+  z-index: 300;
+  box-shadow: 0 8px 32px rgba(0,0,0,.4);
+  transform: translateY(20px);
+  opacity: 0;
+  transition: opacity .3s, transform .3s;
+  pointer-events: none;
+}
+
+.toast.show { opacity: 1; transform: translateY(0); }
+
+/* ─── SETTINGS TABS ─── */
+.stab {
+  padding: 10px 20px;
+  font-size: 13px;
+  color: #6b7299;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  border-left: 3px solid transparent;
+  font-family: 'Inter', sans-serif;
+}
+.stab:hover { background: rgba(255,255,255,.04); color: #f0f4ff; }
+.stab.active { color: #f0f4ff; background: rgba(108,99,255,.1); border-left-color: #6c63ff; font-weight: 500; }
+.stab-panel { display: block; }
+
+/* ─── SETTINGS CONTENT ─── */
+.s-title { font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:700; color:#f0f4ff; margin-bottom:6px; }
+.s-sub   { font-size:13px; color:#6b7299; margin-bottom:28px; }
+.s-section { margin-bottom:22px; }
+.s-label { font-size:12px; font-weight:600; color:#6b7299; letter-spacing:.08em; text-transform:uppercase; margin-bottom:8px; }
+.s-hint  { font-size:12px; color:#4a506e; margin-top:6px; }
+.s-divider { height:1px; background:#1e2240; margin:24px 0; }
+
+.s-input {
+  width: 100%;
+  background: rgba(255,255,255,.05);
+  border: 1px solid #1e2240;
+  color: #f0f4ff;
+  padding: 11px 14px;
+  border-radius: 11px;
+  font-size: 14px;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  transition: border-color .2s;
+  display: block;
+}
+.s-input:focus { border-color: rgba(108,99,255,.5); }
+.s-input::placeholder { color: #4a506e; }
+
+.s-btn-primary {
+  background: linear-gradient(135deg,#6c63ff,#00d4ff);
+  border: none; color: #fff;
+  padding: 12px 28px; border-radius: 11px;
+  font-size: 14px; font-weight: 600;
+  cursor: pointer; font-family: 'Inter', sans-serif;
+  transition: opacity .2s, transform .2s;
+}
+.s-btn-primary:hover { opacity:.88; transform:translateY(-1px); }
+
+/* Toggle switch */
+.s-toggle {
+  width: 44px; height: 24px;
+  border-radius: 100px;
+  background: #1e2240;
+  cursor: pointer;
+  position: relative;
+  transition: background .2s;
+  flex-shrink: 0;
+}
+.s-toggle[data-on="true"] { background: linear-gradient(135deg,#6c63ff,#00d4ff); }
+.s-toggle-thumb {
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform .2s;
+  box-shadow: 0 1px 4px rgba(0,0,0,.3);
+}
+.s-toggle[data-on="true"] .s-toggle-thumb { transform: translateX(20px); }
+
+/* Plan rows */
+.plan-row {
+  display: flex; align-items: center; gap: 16px;
+  background: #141830; border: 1px solid #1e2240;
+  border-radius: 14px; padding: 16px 20px;
+  transition: border-color .2s;
+}
+.plan-row:hover { border-color: rgba(108,99,255,.35); }
+.plan-row.current { border-color: rgba(108,99,255,.5); background: rgba(108,99,255,.06); }
+
+.plan-select-btn {
+  padding: 9px 20px; border-radius: 10px;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer; font-family: 'Inter', sans-serif;
+  white-space: nowrap; transition: opacity .2s;
+  flex-shrink: 0;
+}
+.plan-select-btn.outline {
+  background: transparent; border: 1px solid #1e2240; color: #6b7299; cursor: default;
+}
+.plan-select-btn.filled {
+  background: linear-gradient(135deg,#6c63ff,#00d4ff);
+  border: none; color: #fff;
+}
+.plan-select-btn.filled:hover { opacity: .88; }
+
+/* Pay buttons */
+.pay-btn {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 20px; border-radius: 12px;
+  border: 1px solid #1e2240; background: #141830;
+  color: #f0f4ff; font-size: 14px; font-weight: 500;
+  cursor: pointer; font-family: 'Inter', sans-serif;
+  transition: border-color .2s, background .2s;
+}
+.pay-btn:hover { border-color: rgba(108,99,255,.4); background: rgba(108,99,255,.08); }
+
+/* Theme cards */
+.theme-card {
+  width: 100px; background: #141830;
+  border: 2px solid #1e2240; border-radius: 10px;
+  cursor: pointer; overflow: hidden; transition: border-color .2s;
+}
+.theme-card.active { border-color: #6c63ff; }
+.theme-card:hover  { border-color: rgba(108,99,255,.5); }
+
+/* Size buttons */
+.size-btn {
+  padding: 8px 18px; border-radius: 9px;
+  border: 1px solid #1e2240; background: transparent;
+  color: #6b7299; font-size: 13px; font-family: 'Inter', sans-serif;
+  cursor: pointer; transition: all .15s;
+}
+.size-btn.active, .size-btn:hover { border-color: #6c63ff; color: #f0f4ff; background: rgba(108,99,255,.1); }
+
+
+/* ─── VOICE CALL BTN ─── */
+.voice-call-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px; border-radius: 10px;
+  background: rgba(108,99,255,.12); border: 1px solid rgba(108,99,255,.3);
+  color: var(--white); font-size: 13px; font-weight: 500;
+  cursor: pointer; font-family: 'Inter', sans-serif;
+  transition: background .2s, border-color .2s;
+  white-space: nowrap;
+}
+.voice-call-btn:hover { background: rgba(108,99,255,.22); border-color: rgba(108,99,255,.5); }
+.voice-call-btn.active { background: linear-gradient(135deg,rgba(108,99,255,.3),rgba(0,212,255,.2)); border-color: var(--cyan); animation: voicePulse 2s infinite; }
+@keyframes voicePulse { 0%,100%{box-shadow:0 0 0 0 rgba(108,99,255,.4)} 50%{box-shadow:0 0 0 8px rgba(108,99,255,0)} }
+
+/* ─── VOICE MODAL ─── */
+#voice-overlay {
+  position: fixed; inset: 0;
+  background: rgba(4,5,12,.95); backdrop-filter: blur(20px);
+  z-index: 450; display: none;
+  align-items: center; justify-content: center;
+  flex-direction: column; gap: 0;
+}
+#voice-overlay.open { display: flex; }
+
+.voice-modal {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 0; text-align: center; padding: 40px 32px;
+  max-width: 420px; width: 100%;
+}
+
+.voice-zeno-avatar {
+  width: 120px; height: 120px;
+  border-radius: 50%;
+  background: linear-gradient(135deg,rgba(108,99,255,.15),rgba(0,212,255,.1));
+  border: 2px solid rgba(108,99,255,.3);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 28px;
+  position: relative;
+}
+
+.voice-zeno-avatar svg { width: 60px; height: 60px; }
+
+.voice-zeno-avatar .voice-ring {
+  position: absolute; inset: -8px;
+  border-radius: 50%;
+  border: 2px solid rgba(108,99,255,.25);
+  animation: ringPulse 2s infinite;
+}
+
+.voice-zeno-avatar .voice-ring-2 {
+  inset: -18px;
+  border-color: rgba(108,99,255,.12);
+  animation-delay: .5s;
+}
+
+@keyframes ringPulse { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.05);opacity:.5} }
+
+.voice-status {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 22px; font-weight: 700; color: var(--white);
+  margin-bottom: 8px;
+}
+
+.voice-sub {
+  font-size: 14px; color: var(--muted);
+  margin-bottom: 36px; line-height: 1.6;
+  min-height: 48px;
+}
+
+/* Waveform visualizer */
+.voice-wave {
+  display: flex; align-items: center; gap: 4px;
+  height: 48px; margin-bottom: 36px;
+}
+
+.voice-wave-bar {
+  width: 4px; border-radius: 2px;
+  background: linear-gradient(to top, #6c63ff, #00d4ff);
+  transition: height .1s ease;
+}
+
+/* Voice transcript */
+.voice-transcript {
+  background: rgba(108,99,255,.08);
+  border: 1px solid rgba(108,99,255,.2);
+  border-radius: 14px; padding: 14px 18px;
+  font-size: 14px; color: var(--white);
+  min-height: 54px; width: 100%;
+  margin-bottom: 28px; line-height: 1.6;
+  text-align: left;
+  display: none;
+}
+
+.voice-transcript.show { display: block; }
+
+/* Voice controls */
+.voice-controls {
+  display: flex; align-items: center; gap: 16px;
+  margin-bottom: 0;
+}
+
+.voice-mic-btn {
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  background: var(--gradient);
+  border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 32px rgba(108,99,255,.5);
+  transition: transform .2s, box-shadow .2s;
+}
+
+.voice-mic-btn:hover { transform: scale(1.06); box-shadow: 0 0 48px rgba(108,99,255,.7); }
+.voice-mic-btn.listening { background: linear-gradient(135deg,#ff6b6b,#ee5a24); box-shadow: 0 0 32px rgba(255,107,107,.5); animation: micPulse 1s infinite; }
+@keyframes micPulse { 0%,100%{transform:scale(1)}50%{transform:scale(1.08)} }
+
+.voice-mic-btn svg { width: 28px; height: 28px; }
+
+.voice-end-btn {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  background: rgba(255,107,107,.15);
+  border: 1px solid rgba(255,107,107,.3);
+  color: #ff6b6b; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .2s;
+}
+
+.voice-end-btn:hover { background: rgba(255,107,107,.25); }
+.voice-end-btn svg { width: 20px; height: 20px; }
+
+/* ─── MOBILE RESPONSIVE ─── */
+@media (max-width: 768px) {
+  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 200; transform: translateX(0); transition: transform .25s ease; }
+  .sidebar.collapsed { transform: translateX(-100%); width: var(--sidebar-w) !important; opacity: 1 !important; pointer-events: none; }
+  .main { width: 100%; }
+  .chat-header { padding: 12px 14px; }
+  .chat-header-title { font-size: 14px; }
+  .voice-call-btn span { display: none; }
+  .mode-select { font-size: 12px; padding: 6px 10px; }
+  .input-bar { padding: 10px 14px 16px; }
+  .msg-wrap { padding: 0 16px; }
+  #thinking { padding: 0 16px; }
+  #attachment-preview { padding: 0 14px; }
+  .sidebar-toggle { display: flex; }
+  /* Overlay for mobile sidebar */
+  .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 199; }
+  .sidebar-overlay.show { display: block; }
+  .voice-modal { padding: 28px 20px; }
+  .voice-zeno-avatar { width: 90px; height: 90px; }
+  .voice-zeno-avatar svg { width: 44px; height: 44px; }
+}
+
+@media (max-width: 480px) {
+  .chat-header { gap: 8px; }
+  .header-right { gap: 6px; }
+  .mode-select { max-width: 90px; font-size: 11px; padding: 5px 8px; }
+  .input-wrap { border-radius: 12px; }
+  .welcome-name { font-size: 32px; }
+  .welcome-tagline { font-size: 14px; }
+}
+
+</style>
+</head>
+
+<body>
+<!-- HIDDEN FILE INPUTS -->
+<input type="file" id="file-input-image" accept="image/*" />
+<input type="file" id="file-input-doc" accept=".pdf,.txt,.md,.csv,.json,.py,.js,.html,.css" />
+
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+<div class="app">
+
+  <!-- ─── SIDEBAR ─── -->
+  <div class="sidebar" id="sidebar">
+
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="slg" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#6c63ff"/>
+            <stop offset="100%" stop-color="#00d4ff"/>
+          </linearGradient>
+        </defs>
+        <path d="M24 3 L42 13.5 L42 34.5 L24 45 L6 34.5 L6 13.5 Z" fill="rgba(108,99,255,.18)" stroke="url(#slg)" stroke-width="1.5"/>
+        <path d="M27 10 L18 26 L24 26 L21 38 L30 22 L24 22 Z" fill="url(#slg)"/>
+      </svg>
+      <div>
+        <div class="sidebar-logo-name">Zeno IA</div>
+        <div class="sidebar-logo-tagline">Assistant intelligent</div>
+      </div>
+    </div>
+
+    <button class="new-chat-btn" onclick="newChat()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      Nouvelle conversation
+    </button>
+
+    <div class="sidebar-search">
+      <input id="search" placeholder="Rechercher…" oninput="filterConvs(this.value)" />
+    </div>
+
+    <div class="sidebar-section-label">Conversations</div>
+    <div class="conv-list" id="list"></div>
+
+    <!-- ACCOUNT SECTION -->
+    <div class="account-section">
+      <div class="account-header" onclick="toggleAccount()">
+        <div class="account-avatar" id="acc-avatar">U</div>
+        <div class="account-info">
+          <div class="account-name" id="acc-name">Chargement…</div>
+          <div class="account-plan">
+            <span class="plan-badge" id="acc-plan-badge">—</span>
+            <span id="acc-plan-text"></span>
+          </div>
+        </div>
+        <span class="account-expand" id="acc-chevron">▲</span>
+      </div>
+
+      <div class="account-dropdown" id="account-dropdown">
+        <div class="account-info-row">
+          <strong id="dd-name">—</strong>
+          <span id="dd-email">—</span>
+        </div>
+
+        <div id="expert-banner-wrap" style="display:none;">
+          <div class="expert-banner">
+            <strong>Plan Expert actif</strong>
+            Tu bénéficies de toutes les fonctionnalités avancées : messages illimités, mode approfondi, personnalisation, API et support 24/7.
+          </div>
+        </div>
+
+        <div id="upgrade-banner-wrap">
+          <div class="upgrade-banner">
+            <strong>Passe à Zeno Pro</strong>
+            Messages illimités, mode approfondi, mémoire longue durée et plus encore.
+          </div>
+          <button class="upgrade-btn" onclick="openSettings('plan')">Passer à Pro — 12€ / mois</button>
+        </div>
+
+        <div class="account-actions">
+          <button class="account-action-btn" onclick="openSettings()">Paramètres</button>
+          <button class="account-action-btn" onclick="window.location.href='/'">Se déconnecter</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ─── MAIN ─── -->
+  <div class="main">
+
+    <div class="chat-header">
+      <button class="sidebar-toggle" onclick="toggleSidebar()" title="Ouvrir/fermer le panneau">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="3" y1="6"  x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+      <div class="chat-header-title" id="chat-header-title">Zeno IA</div>
+      <div class="header-right">
+        <select class="mode-select" id="mode">
+          <option value="fast">Rapide</option>
+          <option value="balanced" selected>Équilibré</option>
+          <option value="deep">Approfondi</option>
+        </select>
+        <button class="voice-call-btn" id="voice-call-btn" onclick="openVoiceCall()" title="Appel vocal">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.67A2 2 0 012 .84h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 8.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/>
+          </svg>
+          Appel vocal
+        </button>
+      </div>
+    </div>
+
+    <!-- WELCOME -->
+    <div id="welcome">
+      <div class="welcome-logo">
+        <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="wlg" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#6c63ff"/>
+              <stop offset="100%" stop-color="#00d4ff"/>
+            </linearGradient>
+          </defs>
+          <path d="M24 3 L42 13.5 L42 34.5 L24 45 L6 34.5 L6 13.5 Z" fill="rgba(108,99,255,.15)" stroke="url(#wlg)" stroke-width="1.5"/>
+          <path d="M27 10 L18 26 L24 26 L21 38 L30 22 L24 22 Z" fill="url(#wlg)"/>
+        </svg>
+      </div>
+      <div class="welcome-name">Zeno IA</div>
+      <p class="welcome-tagline">Ton assistant intelligent nouvelle génération.<br>Pose-moi n'importe quelle question.</p>
+    </div>
+
+    <!-- THINKING -->
+    <div id="thinking">
+      <div class="thinking-inner">
+        <div class="thinking-dots"><span></span><span></span><span></span></div>
+        Zeno réfléchit…
+      </div>
+    </div>
+
+    <!-- CHAT -->
+    <div id="chat"><div class="msg-wrap" id="msg-wrap"></div></div>
+
+    <!-- ATTACHMENT PREVIEW -->
+    <div id="attachment-preview"></div>
+
+    <!-- INPUT BAR -->
+    <div class="input-bar">
+      <div class="input-wrap">
+
+        <!-- PLUS BUTTON -->
+        <div style="position:relative;">
+          <button class="plus-btn" id="plus-btn" onclick="togglePlusMenu(event)" title="Ajouter">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+          </button>
+          <div class="plus-dropdown" id="plus-dropdown">
+            <button class="plus-option" onclick="triggerImageUpload()">
+              <div class="plus-option-icon img-icon">🖼️</div>
+              <div class="plus-option-text">
+                <span class="plus-option-label">Ajouter une image</span>
+                <span class="plus-option-sub">JPG, PNG, GIF, WEBP…</span>
+              </div>
+            </button>
+            <div class="divider-line"></div>
+            <button class="plus-option" onclick="triggerDocUpload()">
+              <div class="plus-option-icon file-icon">📄</div>
+              <div class="plus-option-text">
+                <span class="plus-option-label">Ajouter un fichier</span>
+                <span class="plus-option-sub">PDF, TXT, code…</span>
+              </div>
+            </button>
+            <div class="divider-line"></div>
+            <button class="plus-option" onclick="openGenModal()">
+              <div class="plus-option-icon gen-icon">✨</div>
+              <div class="plus-option-text">
+                <span class="plus-option-label">Générer une image</span>
+                <span class="plus-option-sub">Décris ce que tu veux</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <input id="msg" placeholder="Écris ton message à Zeno…" autocomplete="off" autocorrect="off" spellcheck="false" />
+
+        <button class="send-btn" onclick="send()" title="Envoyer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+      <div class="input-hint">Entrée pour envoyer · Zeno peut faire des erreurs — vérifie les infos importantes</div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── GENERATE IMAGE MODAL ─── -->
+<div class="gen-modal-overlay" id="gen-modal" onclick="if(event.target===this)closeGenModal()">
+  <div class="gen-modal">
+    <button class="gen-modal-close" onclick="closeGenModal()">×</button>
+    <h3>✨ Générer une image</h3>
+    <p>Décris l'image que tu veux créer. Zeno va l'imaginer pour toi.</p>
+    <textarea id="gen-prompt" placeholder="Ex : Un chat astronaute flottant dans l'espace, style aquarelle…"></textarea>
+    <button class="gen-modal-submit" id="gen-submit-btn" onclick="generateImage()">Générer l'image →</button>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════
+   APPEL VOCAL
+═══════════════════════════════════════════ */
+let voiceConvId    = null;
+let recognition    = null;
+let isListening    = false;
+let isSpeaking     = false;
+let waveInterval   = null;
+let synth          = window.speechSynthesis;
+
+function openVoiceCall() {
+  document.getElementById('voice-overlay').classList.add('open');
+  document.getElementById('voice-call-btn').classList.add('active');
+  startWaveIdle();
+
+  // Create a voice conversation
+  fetch('/new', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => { voiceConvId = d.id; });
+}
+
+function closeVoiceCall() {
+  document.getElementById('voice-overlay').classList.remove('open');
+  document.getElementById('voice-call-btn').classList.remove('active');
+  stopListening();
+  if (synth) synth.cancel();
+  stopWave();
+  setVoiceStatus('Zeno IA', 'Appuie sur le micro pour commencer à parler');
+}
+
+/* ── MIC TOGGLE ── */
+function toggleMic() {
+  if (isSpeaking) return;
+  if (isListening) {
+    stopListening();
+  } else {
+    startListening();
+  }
+}
+
+function startListening() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    setVoiceStatus('Non supporté', 'Ton navigateur ne supporte pas la reconnaissance vocale. Essaie Chrome.');
+    return;
+  }
+
+  recognition = new SpeechRecognition();
+  recognition.lang       = 'fr-FR';
+  recognition.continuous = false;
+  recognition.interimResults = true;
+
+  recognition.onstart = () => {
+    isListening = true;
+    document.getElementById('voice-mic-btn').classList.add('listening');
+    setVoiceStatus('Écoute...', "Parle, je t'écoute");
+    startWaveListening();
+    document.getElementById('voice-transcript').classList.add('show');
+    document.getElementById('voice-transcript').textContent = '';
+  };
+
+  recognition.onresult = (e) => {
+    let interim = '';
+    let final   = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) final += e.results[i][0].transcript;
+      else interim += e.results[i][0].transcript;
+    }
+    document.getElementById('voice-transcript').textContent = final || interim;
+    if (final) recognition.stop();
+  };
+
+  recognition.onend = () => {
+    isListening = false;
+    document.getElementById('voice-mic-btn').classList.remove('listening');
+    const text = document.getElementById('voice-transcript').textContent.trim();
+    if (text) sendVoiceMessage(text);
+    else { setVoiceStatus('Zeno IA', "Rien entendu — réessaie !"); startWaveIdle(); }
+  };
+
+  recognition.onerror = (e) => {
+    isListening = false;
+    document.getElementById('voice-mic-btn').classList.remove('listening');
+    setVoiceStatus('Zeno IA', e.error === 'not-allowed' ? "Autorise le micro dans ton navigateur" : "Erreur micro — réessaie");
+    startWaveIdle();
+  };
+
+  recognition.start();
+}
+
+function stopListening() {
+  if (recognition) { try { recognition.stop(); } catch(e){} }
+  isListening = false;
+  document.getElementById('voice-mic-btn').classList.remove('listening');
+}
+
+/* ── SEND VOICE MESSAGE ── */
+async function sendVoiceMessage(text) {
+  if (!voiceConvId) {
+    const r = await fetch('/new', { method: 'POST' });
+    const d = await r.json();
+    voiceConvId = d.id;
+  }
+
+  isSpeaking = true;
+  setVoiceStatus('Zeno réfléchit...', text);
+  startWaveThinking();
+
+  try {
+    const res  = await fetch('/chat/' + voiceConvId, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, mode: 'fast', voice: true })
+    });
+    const data = await res.json();
+    const reply = data.response;
+
+    setVoiceStatus('Zeno parle...', reply.length > 100 ? reply.slice(0, 100) + '…' : reply);
+    startWaveSpeaking();
+    speakText(reply);
+
+  } catch(e) {
+    isSpeaking = false;
+    setVoiceStatus('Zeno IA', "Erreur de connexion — réessaie");
+    startWaveIdle();
+  }
+}
+
+/* ── SPEECH SYNTHESIS ── */
+function speakText(text) {
+  if (!synth) { isSpeaking = false; startWaveIdle(); return; }
+  synth.cancel();
+
+  // Clean text for speech (remove markdown)
+  const clean = text
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/#{1,6}\s/g, '')
+    .replace(/<[^>]+>/g, '')
+    .trim();
+
+  function doSpeak(voices) {
+    const utter = new SpeechSynthesisUtterance(clean);
+    utter.lang  = 'fr-FR';
+    utter.rate  = 1.0;
+    utter.pitch = 1.05;
+    utter.volume = 1.0;
+
+    // Pick best French voice
+    const frVoice = voices.find(v => v.lang === 'fr-FR' && v.localService)
+                  || voices.find(v => v.lang === 'fr-FR')
+                  || voices.find(v => v.lang.startsWith('fr'))
+                  || null;
+    if (frVoice) utter.voice = frVoice;
+
+    utter.onstart = () => { startWaveSpeaking(); };
+
+    utter.onend = () => {
+      isSpeaking = false;
+      setVoiceStatus('Zeno IA', 'Appuie sur le micro pour répondre');
+      startWaveIdle();
+      document.getElementById('voice-transcript').textContent = '';
+      document.getElementById('voice-transcript').classList.remove('show');
+    };
+
+    utter.onerror = (e) => {
+      console.error('Speech error:', e);
+      isSpeaking = false;
+      startWaveIdle();
+      setVoiceStatus('Zeno IA', 'Appuie sur le micro pour répondre');
+    };
+
+    synth.speak(utter);
+
+    // Chrome bug: sometimes speech doesn't start, nudge it
+    setTimeout(() => {
+      if (synth.paused) synth.resume();
+    }, 200);
+  }
+
+  // Chrome needs voices to be loaded — wait if empty
+  let voices = synth.getVoices();
+  if (voices.length > 0) {
+    doSpeak(voices);
+  } else {
+    synth.addEventListener('voiceschanged', () => {
+      voices = synth.getVoices();
+      doSpeak(voices);
+    }, { once: true });
+  }
+
+  // Placeholder so utter.onend logic doesn't need to be duplicated
+  const utter_placeholder = null;
+  const frVoice = null;
+
+  utter.onend = () => {
+    isSpeaking = false;
+    setVoiceStatus('Zeno IA', 'Appuie sur le micro pour répondre');
+    startWaveIdle();
+    document.getElementById('voice-transcript').textContent = '';
+  };
+
+  utter.onerror = () => {
+    isSpeaking = false;
+    startWaveIdle();
+  };
+
+  synth.speak(utter);
+}
+
+/* ── WAVE ANIMATIONS ── */
+const WAVE_BARS = 15;
+
+function startWaveIdle() {
+  stopWave();
+  const bars = document.querySelectorAll('.voice-wave-bar');
+  const heights = [8,16,24,32,24,40,32,24,16,8,24,32,40,32,24];
+  bars.forEach((b,i) => b.style.height = heights[i] + 'px');
+}
+
+function startWaveListening() {
+  stopWave();
+  waveInterval = setInterval(() => {
+    document.querySelectorAll('.voice-wave-bar').forEach(b => {
+      b.style.height = (8 + Math.random() * 36) + 'px';
+    });
+  }, 100);
+}
+
+function startWaveThinking() {
+  stopWave();
+  let t = 0;
+  waveInterval = setInterval(() => {
+    t += 0.2;
+    document.querySelectorAll('.voice-wave-bar').forEach((b,i) => {
+      b.style.height = (20 + Math.sin(t + i * 0.5) * 16) + 'px';
+    });
+  }, 60);
+}
+
+function startWaveSpeaking() {
+  stopWave();
+  waveInterval = setInterval(() => {
+    document.querySelectorAll('.voice-wave-bar').forEach(b => {
+      b.style.height = (12 + Math.random() * 28) + 'px';
+    });
+  }, 80);
+}
+
+function stopWave() {
+  if (waveInterval) { clearInterval(waveInterval); waveInterval = null; }
+}
+
+function setVoiceStatus(title, sub) {
+  document.getElementById('voice-status').textContent = title;
+  document.getElementById('voice-sub').textContent = sub;
+}
+
+/* ── MOBILE SIDEBAR ── */
+const _origToggle = window.toggleSidebar;
+window.toggleSidebar = function() {
+  sidebarOpen = !sidebarOpen;
+  document.getElementById('sidebar').classList.toggle('collapsed', !sidebarOpen);
+  // Mobile overlay
+  const overlay = document.getElementById('sidebar-overlay');
+  if (overlay) overlay.classList.toggle('show', sidebarOpen && window.innerWidth <= 768);
+};
+
+// Close sidebar on mobile when clicking a conversation
+const _origOpenChat = window.openChat;
+
+/* ═══════════════════════════════════════════
+   PARAMÈTRES
+═══════════════════════════════════════════ */
+function openSettings(tab) {
+  const overlay = document.getElementById('settings-overlay');
+  overlay.style.display = 'flex';
+  showTab(tab || 'compte');
+  // Remplis les champs avec les infos actuelles
+  if (currentUser) {
+    const pEl = document.getElementById('s-prenom');
+    const eEl = document.getElementById('s-email');
+    const aEl = document.getElementById('s-avatar-preview');
+    if (pEl) pEl.value = currentUser.prenom || '';
+    if (eEl) eEl.value = currentUser.email || '';
+    if (aEl) aEl.textContent = (currentUser.prenom || currentUser.email || 'U')[0].toUpperCase();
+    updatePlanUI(currentUser.plan || 'free');
+  }
+}
+
+function closeSettings() {
+  document.getElementById('settings-overlay').style.display = 'none';
+}
+
+/* Tabs */
+const TABS = ['compte','plan','apparence','notifs','securite','ia'];
+function showTab(name) {
+  TABS.forEach(t => {
+    document.getElementById('tab-' + t).style.display  = t === name ? 'block' : 'none';
+    const el = document.getElementById('stab-' + t);
+    if (el) el.className = 'stab' + (t === name ? ' active' : '');
+  });
+}
+
+/* Plan UI */
+function updatePlanUI(plan) {
+  const names  = { free: 'Gratuit', pro: 'Pro', expert: 'Expert' };
+  const nameEl = document.getElementById('current-plan-name');
+  const badgeEl= document.getElementById('current-plan-badge');
+  if (nameEl)  nameEl.textContent = names[plan] || 'Gratuit';
+
+  // Reset all rows
+  ['free','pro','expert'].forEach(p => {
+    const row = document.getElementById('plan-row-' + p);
+    const btn = document.getElementById('btn-' + p);
+    if (!row || !btn) return;
+    row.className = 'plan-row' + (p === plan ? ' current' : '');
+    if (p === plan) {
+      btn.className   = 'plan-select-btn outline';
+      btn.textContent = 'Plan actuel';
+      btn.onclick     = null;
+    } else {
+      btn.className   = 'plan-select-btn filled';
+      btn.textContent = p === 'pro' ? 'Choisir Pro' : 'Choisir Expert';
+      btn.onclick     = () => selectPlan(p);
+    }
+  });
+}
+
+function selectPlan(plan) {
+  if (!currentUser || currentUser.plan === plan) return;
+  document.getElementById('payment-zone').style.display = 'block';
+  // Store chosen plan for payment
+  document.getElementById('payment-zone').dataset.plan = plan;
+  // Scroll to payment zone
+  document.getElementById('payment-zone').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function payWith(method) {
+  document.getElementById('payment-soon').style.display = 'block';
+}
+
+/* Save account */
+async function saveAccount() {
+  const prenom = document.getElementById('s-prenom').value.trim();
+  const msgEl  = document.getElementById('s-account-msg');
+  // For now just update display
+  if (prenom && currentUser) {
+    currentUser.prenom = prenom;
+    document.getElementById('acc-name').textContent = prenom;
+    document.getElementById('acc-avatar').textContent = prenom[0].toUpperCase();
+    document.getElementById('s-avatar-preview').textContent = prenom[0].toUpperCase();
+  }
+  msgEl.textContent = 'Modifications enregistrées !';
+  msgEl.style.display = 'block';
+  setTimeout(() => msgEl.style.display = 'none', 3000);
+}
+
+/* Change password */
+async function changePassword() {
+  const oldPw  = document.getElementById('s-pw-old').value;
+  const newPw  = document.getElementById('s-pw-new').value;
+  const confPw = document.getElementById('s-pw-confirm').value;
+  const msgEl  = document.getElementById('s-pw-msg');
+
+  if (!oldPw || !newPw || !confPw) {
+    msgEl.textContent = 'Remplis tous les champs.';
+    msgEl.style.color = '#ff6b6b';
+    msgEl.style.display = 'block';
+    return;
+  }
+  if (newPw !== confPw) {
+    msgEl.textContent = 'Les mots de passe ne correspondent pas.';
+    msgEl.style.color = '#ff6b6b';
+    msgEl.style.display = 'block';
+    return;
+  }
+  if (newPw.length < 6) {
+    msgEl.textContent = 'Le mot de passe doit faire au moins 6 caractères.';
+    msgEl.style.color = '#ff6b6b';
+    msgEl.style.display = 'block';
+    return;
+  }
+  // TODO: appel API /change-password quand backend prêt
+  msgEl.textContent = 'Mot de passe mis à jour !';
+  msgEl.style.color = '#00d4ff';
+  msgEl.style.display = 'block';
+  document.getElementById('s-pw-old').value = '';
+  document.getElementById('s-pw-new').value = '';
+  document.getElementById('s-pw-confirm').value = '';
+  setTimeout(() => msgEl.style.display = 'none', 3000);
+}
+
+/* Toggles */
+function toggleSetting(id) {
+  const el = document.getElementById('toggle-' + id);
+  if (!el) return;
+  const on = el.dataset.on === 'true';
+  el.dataset.on = String(!on);
+}
+
+/* Appearance */
+function setTheme(theme) {
+  ['dark','light','midnight'].forEach(t => {
+    document.getElementById('theme-' + t).className = 'theme-card' + (t === theme ? ' active' : '');
+  });
+  const root = document.documentElement;
+  if (theme === 'light') {
+    root.style.setProperty('--bg',      '#f4f6fb');
+    root.style.setProperty('--surface', '#ffffff');
+    root.style.setProperty('--card',    '#edf0f7');
+    root.style.setProperty('--card2',   '#e4e8f2');
+    root.style.setProperty('--border',  '#d0d5e8');
+    root.style.setProperty('--white',   '#1b2333');
+    root.style.setProperty('--muted',   '#5a6380');
+    root.style.setProperty('--muted2',  '#8890aa');
+    document.body.style.colorScheme = 'light';
+  } else if (theme === 'midnight') {
+    root.style.setProperty('--bg',      '#04000f');
+    root.style.setProperty('--surface', '#080014');
+    root.style.setProperty('--card',    '#0d0020');
+    root.style.setProperty('--card2',   '#120028');
+    root.style.setProperty('--border',  '#2a0050');
+    root.style.setProperty('--white',   '#f0e8ff');
+    root.style.setProperty('--muted',   '#8860cc');
+    root.style.setProperty('--muted2',  '#5a3a8a');
+    document.body.style.colorScheme = 'dark';
+  } else {
+    root.style.setProperty('--bg',      '#080a14');
+    root.style.setProperty('--surface', '#0d0f22');
+    root.style.setProperty('--card',    '#141830');
+    root.style.setProperty('--card2',   '#1a1e38');
+    root.style.setProperty('--border',  '#1e2240');
+    root.style.setProperty('--white',   '#f0f4ff');
+    root.style.setProperty('--muted',   '#6b7299');
+    root.style.setProperty('--muted2',  '#4a506e');
+    document.body.style.colorScheme = 'dark';
+  }
+  localStorage.setItem('zeno-theme', theme);
+  currentTheme = theme;
+}
+
+function setFontSize(size) {
+  ['sm','md','lg'].forEach(s => {
+    document.getElementById('size-' + s).className = 'size-btn' + (s === size ? ' active' : '');
+  });
+  const sizes = { sm: '13px', md: '15px', lg: '17px' };
+  document.querySelectorAll('.msg-bubble').forEach(el => el.style.fontSize = sizes[size]);
+  document.documentElement.style.setProperty('--msg-font', sizes[size]);
+  localStorage.setItem('zeno-fontsize', size);
+}
+
+function saveAppearance() {
+  const msgEl = document.createElement('div');
+  showToast('Apparence mise à jour !');
+}
+
+/* IA settings */
+function saveIASettings() {
+  const mode = document.getElementById('s-default-mode').value;
+  const modeSelect = document.getElementById('mode');
+  if (modeSelect) modeSelect.value = mode;
+
+  const msgEl = document.getElementById('s-ia-msg');
+  msgEl.textContent = 'Préférences enregistrées !';
+  msgEl.style.display = 'block';
+  setTimeout(() => msgEl.style.display = 'none', 3000);
+}
+
+function doLogout() {
+  showConfirm('Se déconnecter ?', 'Tu devras te reconnecter pour accéder à Nova.', () => {
+    window.location.href = '/';
+  });
+}
+
+/* Close settings with Escape */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeSettings();
+});
+
+let currentId  = null;
+let allConvs   = [];
+let sidebarOpen = true;
+let pendingAttachments = []; // {type:'image'|'file', name, dataUrl?, content?}
+let currentUser = null;
+
+/* ─── INIT ─── */
+async function init() {
+  // Restore appearance preferences
+  const savedTheme = localStorage.getItem('zeno-theme');
+  const savedFont  = localStorage.getItem('zeno-fontsize');
+  if (savedTheme) setTheme(savedTheme);
+  if (savedFont)  setFontSize(savedFont);
+  await loadUser();
+  await loadConvs();
+}
+
+/* ─── LOAD USER INFO ─── */
+async function loadUser() {
+  try {
+    const res  = await fetch('/me');
+    const data = await res.json();
+    if (!data.ok) {
+      window.location.href = '/';
+      return;
+    }
+    currentUser = data;
+    applyUserUI(data);
+  } catch(e) {
+    // Mode dev local sans session
+    applyUserUI({ email: 'local@nova.ia', prenom: 'Utilisateur', plan: 'free' });
+  }
+}
+
+function applyUserUI(u) {
+  const initial = (u.prenom || u.email || 'U')[0].toUpperCase();
+  const avatarEl = document.getElementById('acc-avatar');
+  avatarEl.textContent = initial;
+
+  document.getElementById('acc-name').textContent = u.prenom || u.email;
+  document.getElementById('dd-name').textContent  = u.prenom || 'Utilisateur';
+  document.getElementById('dd-email').textContent = u.email;
+
+  const isExpert = u.plan === 'expert';
+  const badge    = document.getElementById('acc-plan-badge');
+  const planText = document.getElementById('acc-plan-text');
+
+  if (isExpert) {
+    badge.textContent = 'EXPERT';
+    badge.className   = 'plan-badge expert';
+    avatarEl.className = 'account-avatar expert';
+    planText.textContent = 'Plan Expert';
+    document.getElementById('expert-banner-wrap').style.display = 'block';
+    document.getElementById('upgrade-banner-wrap').style.display = 'none';
+  } else if (u.plan === 'pro') {
+    badge.textContent = 'PRO';
+    planText.textContent = 'Plan Pro';
+  } else {
+    badge.textContent = 'GRATUIT';
+    planText.textContent = 'Plan gratuit';
+  }
+}
+
+/* ─── SIDEBAR TOGGLE ─── */
+function toggleSidebar() {
+  sidebarOpen = !sidebarOpen;
+  document.getElementById('sidebar').classList.toggle('collapsed', !sidebarOpen);
+}
+
+/* ─── LOAD CONVERSATIONS ─── */
+async function loadConvs() {
+  const res  = await fetch('/conversations');
+  const data = await res.json();
+  allConvs   = data.conversations;
+  renderConvs(allConvs);
+}
+
+function renderConvs(list) {
+  const el = document.getElementById('list');
+  el.innerHTML = '';
+  list.forEach(c => {
+    const div = document.createElement('div');
+    div.className = 'conv-item' + (c.id === currentId ? ' active' : '');
+    div.innerHTML = `
+      <span class="conv-item-title">${escHtml(c.title)}</span>
+      <button class="conv-delete" onclick="deleteChat(event,'${c.id}')" title="Supprimer">✕</button>
+    `;
+    div.onclick = () => openChat(c.id);
+    el.appendChild(div);
+  });
+}
+
+function filterConvs(q) {
+  const filtered = q ? allConvs.filter(c => c.title.toLowerCase().includes(q.toLowerCase())) : allConvs;
+  renderConvs(filtered);
+}
+
+/* ─── NEW CHAT ─── */
+async function newChat() {
+  const res = await fetch('/new', { method: 'POST' });
+  const data = await res.json();
+  currentId = data.id;
+  document.getElementById('msg-wrap').innerHTML = '';
+  document.getElementById('chat').style.display   = 'none';
+  document.getElementById('welcome').style.display = 'flex';
+  document.getElementById('chat-header-title').textContent = 'Nouvelle conversation';
+  pendingAttachments = [];
+  renderAttachments();
+  await loadConvs();
+}
+
+/* ─── OPEN CHAT ─── */
+async function openChat(id) {
+  currentId = id;
+  const res  = await fetch('/conversation/' + id);
+  const data = await res.json();
+
+  document.getElementById('msg-wrap').innerHTML  = '';
+  document.getElementById('welcome').style.display = 'none';
+  document.getElementById('chat').style.display   = 'block';
+
+  const conv = allConvs.find(c => c.id === id);
+  document.getElementById('chat-header-title').textContent = conv ? conv.title : 'Conversation';
+  data.messages.forEach(m => addMsg(m.role, m.text));
+  renderConvs(allConvs);
+}
+
+/* ─── SEND (STREAMING) ─── */
+async function send() {
+  const input = document.getElementById('msg');
+  const msg   = input.value.trim();
+  if (!msg && pendingAttachments.length === 0) return;
+
+  if (!currentId) {
+    const r = await fetch('/new', { method: 'POST' });
+    const d = await r.json();
+    currentId = d.id;
+    await loadConvs();
+  }
+
+  document.getElementById('welcome').style.display = 'none';
+  document.getElementById('chat').style.display    = 'block';
+
+  // Build display text for user bubble
+  let displayText = msg;
+  if (pendingAttachments.length > 0) {
+    displayText += (msg ? '\n' : '') + pendingAttachments.map(a => `[${a.name}]`).join(' ');
+  }
+  addMsg('user', displayText);
+
+  // Build full message with attachments content
+  let fullMessage = msg;
+  if (pendingAttachments.length > 0) {
+    for (const a of pendingAttachments) {
+      if (a.type === 'file' && a.content) {
+        fullMessage += `\n\n[Fichier joint : ${a.name}]\n${a.content}`;
+      } else if (a.type === 'image') {
+        fullMessage += `\n\n[Image jointe : ${a.name}]`;
+      }
+    }
+  }
+
+  input.value = '';
+  pendingAttachments = [];
+  renderAttachments();
+
+  document.getElementById('thinking').style.display = 'block';
+  scrollChat();
+
+  const mode = document.getElementById('mode').value;
+
+  // Crée le bloc de réponse IA vide pour le streaming
+  const wrap    = document.getElementById('msg-wrap');
+  const aiDiv   = document.createElement('div');
+  aiDiv.className = 'message assistant';
+  const bubbleId  = 'bubble-' + Date.now();
+  aiDiv.innerHTML = `
+    <div class="msg-avatar ai">${zenoLogoSVG()}</div>
+    <div class="msg-body">
+      <div class="msg-sender">Zeno</div>
+      <div class="msg-bubble" id="${bubbleId}"></div>
+    </div>
+  `;
+  // On l'ajoute mais caché jusqu'au premier token
+  aiDiv.style.display = 'none';
+  wrap.appendChild(aiDiv);
+
+  let streamedText = '';
+
+  try {
+    const res = await fetch('/chat/' + currentId, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: fullMessage, mode })
+    });
+
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let   buffer  = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // garde la ligne incomplète
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const payload = JSON.parse(line.slice(6));
+
+          if (payload.token !== undefined) {
+            // Premier token — afficher le bloc et cacher le "réfléchit"
+            if (streamedText === '') {
+              document.getElementById('thinking').style.display = 'none';
+              aiDiv.style.display = 'flex';
+            }
+            streamedText += payload.token;
+            const bubbleEl = document.getElementById(bubbleId);
+            if (bubbleEl) bubbleEl.innerHTML = formatMessage(streamedText);
+            scrollChat();
+          }
+
+          if (payload.done) {
+            document.getElementById('thinking').style.display = 'none';
+            // Ajoute boutons copier sur les blocs de code
+            aiDiv.querySelectorAll('pre').forEach(pre => {
+              if (!pre.querySelector('.copy-code-btn')) {
+                const btn = document.createElement('button');
+                btn.className = 'copy-code-btn';
+                btn.textContent = 'Copier';
+                btn.onclick = () => {
+                  navigator.clipboard.writeText(pre.textContent.replace('Copier','').trim());
+                  btn.textContent = 'Copié !';
+                  setTimeout(() => btn.textContent = 'Copier', 2000);
+                };
+                pre.style.position = 'relative';
+                pre.appendChild(btn);
+              }
+            });
+
+            // Met à jour le titre dans la sidebar
+            if (payload.title) {
+              await loadConvs();
+              document.getElementById('chat-header-title').textContent = payload.title;
+            }
+          }
+        } catch(e) { /* ligne mal formée, on ignore */ }
+      }
+    }
+  } catch(e) {
+    document.getElementById('thinking').style.display = 'none';
+    const bubbleEl = document.getElementById(bubbleId);
+    if (bubbleEl) bubbleEl.innerHTML = "Erreur de connexion. Verifie qu'Ollama tourne.";
+    aiDiv.style.display = 'flex';
+  }
+}
+
+/* ─── ADD MESSAGE ─── */
+function addMsg(role, text) {
+  const wrap = document.getElementById('msg-wrap');
+  const div  = document.createElement('div');
+  div.className = 'message ' + role;
+  const isAI = role === 'assistant';
+  const id   = 'msg-' + Date.now();
+
+  div.innerHTML = `
+    <div class="msg-avatar ${isAI ? 'ai' : 'user'}">
+      ${isAI ? zenoLogoSVG() : 'T'}
+    </div>
+    <div class="msg-body">
+      <div class="msg-sender">${isAI ? 'Zeno' : 'Toi'}</div>
+      <div class="msg-bubble" id="${id}">${formatMessage(text)}</div>
+    </div>
+  `;
+  wrap.appendChild(div);
+
+  // add copy buttons to code blocks
+  div.querySelectorAll('pre').forEach(pre => {
+    const btn = document.createElement('button');
+    btn.className = 'copy-code-btn';
+    btn.textContent = 'Copier';
+    btn.onclick = () => { navigator.clipboard.writeText(pre.textContent.replace('Copier','').trim()); btn.textContent = '✓ Copié'; setTimeout(()=>btn.textContent='Copier', 2000); };
+    pre.style.position = 'relative';
+    pre.appendChild(btn);
+  });
+
+  scrollChat();
+}
+
+function zenoLogoSVG() {
+  const uid = 'n' + Math.random().toString(36).slice(2,6);
+  return `<svg viewBox="0 0 48 48" fill="none"><defs><linearGradient id="${uid}" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#6c63ff"/><stop offset="100%" stop-color="#00d4ff"/></linearGradient></defs><path d="M24 3 L42 13.5 L42 34.5 L24 45 L6 34.5 L6 13.5 Z" fill="rgba(108,99,255,.2)" stroke="url(#${uid})" stroke-width="1.5"/><path d="M27 10 L18 26 L24 26 L21 38 L30 22 L24 22 Z" fill="url(#${uid})"/></svg>`;
+}
+
+function formatMessage(text) {
+  // code blocks
+  text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) =>
+    `<pre><code class="language-${lang}">${escHtml(code.trim())}</code></pre>`
+  );
+  // inline code
+  text = text.replace(/`([^`]+)`/g, '<code style="background:rgba(108,99,255,.15);padding:2px 6px;border-radius:4px;font-size:13px;">$1</code>');
+  // bold
+  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // italic
+  text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // newlines
+  text = text.replace(/\n/g, '<br>');
+  return text;
+}
+
+function escHtml(t) {
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function scrollChat() {
+  const chat = document.getElementById('chat');
+  requestAnimationFrame(() => { chat.scrollTop = chat.scrollHeight; });
+}
+
+/* ─── DELETE CHAT ─── */
+async function deleteChat(e, id) {
+  e.stopPropagation();
+  showConfirm('Supprimer cette conversation ?', 'Cette action est irréversible.', async () => {
+    await fetch('/delete/' + id, { method: 'POST' });
+    if (currentId === id) {
+      currentId = null;
+      document.getElementById('msg-wrap').innerHTML = '';
+      document.getElementById('chat').style.display    = 'none';
+      document.getElementById('welcome').style.display = 'flex';
+      document.getElementById('chat-header-title').textContent = 'Zeno IA';
+    }
+    loadConvs();
+  });
+}
+
+/* ─── CONFIRM DIALOG ─── */
+function showConfirm(title, subtitle, onConfirm) {
+  // Remove existing if any
+  const existing = document.getElementById('confirm-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'confirm-overlay';
+  overlay.style.cssText = `
+    position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);
+    z-index:500;display:flex;align-items:center;justify-content:center;
+  `;
+
+  overlay.innerHTML = `
+    <div style="
+      background:#141830;border:1px solid #1e2240;border-radius:20px;
+      padding:36px 32px;width:380px;text-align:center;
+      box-shadow:0 20px 60px rgba(0,0,0,.5);
+    ">
+      <div style="
+        width:52px;height:52px;border-radius:50%;
+        background:rgba(255,107,107,.12);border:1px solid rgba(255,107,107,.3);
+        display:flex;align-items:center;justify-content:center;
+        margin:0 auto 20px;font-size:22px;
+      ">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff6b6b" stroke-width="2" stroke-linecap="round">
+          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+          <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+        </svg>
+      </div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;color:#f0f4ff;margin-bottom:8px;">${title}</div>
+      <div style="font-size:13px;color:#6b7299;margin-bottom:28px;">${subtitle}</div>
+      <div style="display:flex;gap:12px;justify-content:center;">
+        <button id="confirm-cancel" style="
+          flex:1;padding:12px;border-radius:12px;border:1px solid #1e2240;
+          background:transparent;color:#f0f4ff;font-size:14px;font-weight:500;
+          cursor:pointer;font-family:'Inter',sans-serif;transition:background .15s;
+        ">Annuler</button>
+        <button id="confirm-ok" style="
+          flex:1;padding:12px;border-radius:12px;border:none;
+          background:linear-gradient(135deg,#ff6b6b,#ee5a24);color:#fff;
+          font-size:14px;font-weight:600;cursor:pointer;
+          font-family:'Inter',sans-serif;transition:opacity .15s;
+        ">Supprimer</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  document.getElementById('confirm-cancel').onclick = () => overlay.remove();
+  document.getElementById('confirm-ok').onclick = () => { overlay.remove(); onConfirm(); };
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+}
+
+/* ─── ACCOUNT TOGGLE ─── */
+let accountOpen = false;
+function toggleAccount() {
+  accountOpen = !accountOpen;
+  document.getElementById('account-dropdown').className = 'account-dropdown' + (accountOpen ? ' open' : '');
+  document.getElementById('acc-chevron').textContent = accountOpen ? '▼' : '▲';
+}
+
+/* ─── PLUS MENU ─── */
+let plusOpen = false;
+function togglePlusMenu(e) {
+  e.stopPropagation();
+  plusOpen = !plusOpen;
+  document.getElementById('plus-dropdown').classList.toggle('open', plusOpen);
+}
+
+document.addEventListener('click', () => {
+  plusOpen = false;
+  document.getElementById('plus-dropdown').classList.remove('open');
+});
+
+/* ─── FILE UPLOADS ─── */
+function triggerImageUpload() {
+  plusOpen = false;
+  document.getElementById('plus-dropdown').classList.remove('open');
+  document.getElementById('file-input-image').click();
+}
+
+function triggerDocUpload() {
+  plusOpen = false;
+  document.getElementById('plus-dropdown').classList.remove('open');
+  document.getElementById('file-input-doc').click();
+}
+
+document.getElementById('file-input-image').addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    pendingAttachments.push({ type: 'image', name: file.name, dataUrl: e.target.result });
+    renderAttachments();
+  };
+  reader.readAsDataURL(file);
+  this.value = '';
+});
+
+document.getElementById('file-input-doc').addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    pendingAttachments.push({ type: 'file', name: file.name, content: e.target.result });
+    renderAttachments();
+  };
+  reader.readAsText(file);
+  this.value = '';
+});
+
+function renderAttachments() {
+  const wrap = document.getElementById('attachment-preview');
+  if (pendingAttachments.length === 0) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
+  wrap.style.display = 'flex';
+  wrap.innerHTML = pendingAttachments.map((a, i) => `
+    <div class="attach-chip">
+      ${a.type === 'image' ? `<img src="${a.dataUrl}" alt="${a.name}">` : '📄'}
+      <span>${a.name}</span>
+      <button class="attach-chip-remove" onclick="removeAttachment(${i})">✕</button>
+    </div>
+  `).join('');
+}
+
+function removeAttachment(i) {
+  pendingAttachments.splice(i, 1);
+  renderAttachments();
+}
+
+/* ─── GENERATE IMAGE MODAL ─── */
+function openGenModal() {
+  plusOpen = false;
+  document.getElementById('plus-dropdown').classList.remove('open');
+  document.getElementById('gen-modal').classList.add('open');
+}
+
+function closeGenModal() {
+  document.getElementById('gen-modal').classList.remove('open');
+}
+
+async function generateImage() {
+  const prompt = document.getElementById('gen-prompt').value.trim();
+  if (!prompt) return;
+
+  const btn = document.getElementById('gen-submit-btn');
+  btn.textContent = 'Génération en cours…';
+  btn.disabled = true;
+
+  closeGenModal();
+  document.getElementById('gen-prompt').value = '';
+
+  if (!currentId) {
+    const r = await fetch('/new', { method: 'POST' });
+    const d = await r.json();
+    currentId = d.id;
+    await loadConvs();
+  }
+
+  document.getElementById('welcome').style.display = 'none';
+  document.getElementById('chat').style.display    = 'block';
+
+  addMsg('user', `✨ Génère une image : ${prompt}`);
+  document.getElementById('thinking').style.display = 'block';
+  scrollChat();
+
+  // Ask Zeno to describe/create the image via Pollinations (free image generation API)
+  try {
+    const encodedPrompt = encodeURIComponent(prompt);
+    const imgUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=512&height=512&nologo=true`;
+
+    // Preload image
+    const img = new Image();
+    img.onload = () => {
+      document.getElementById('thinking').style.display = 'none';
+      // Add as AI message with image card
+      const wrap = document.getElementById('msg-wrap');
+      const div  = document.createElement('div');
+      div.className = 'message assistant';
+      const uid = 'n' + Math.random().toString(36).slice(2,6);
+      div.innerHTML = `
+        <div class="msg-avatar ai">${zenoLogoSVG()}</div>
+        <div class="msg-body">
+          <div class="msg-sender">Zeno</div>
+          <div class="msg-bubble">
+            Voici l'image générée pour : <em>${escHtml(prompt)}</em>
+            <div class="gen-img-card">
+              <img src="${imgUrl}" alt="${escHtml(prompt)}">
+              <div class="gen-img-card-footer">
+                <span>Généré par Zeno IA</span>
+                <a href="${imgUrl}" download="nova-image.jpg" style="color:var(--violet);font-size:12px;text-decoration:none;">⬇ Télécharger</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      wrap.appendChild(div);
+      scrollChat();
+      btn.textContent = 'Générer l\'image →';
+      btn.disabled = false;
+    };
+    img.onerror = () => {
+      document.getElementById('thinking').style.display = 'none';
+      addMsg("assistant", `Je n'ai pas pu générer l'image pour "${prompt}". Essaie une autre description.`);
+      btn.textContent = 'Générer l\'image →';
+      btn.disabled = false;
+    };
+    img.src = imgUrl;
+  } catch(e) {
+    document.getElementById('thinking').style.display = 'none';
+    addMsg('assistant', 'Une erreur est survenue lors de la génération.');
+    btn.textContent = 'Générer l\'image →';
+    btn.disabled = false;
+  }
+}
+
+/* ─── ENTER KEY ─── */
+document.getElementById('msg').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+
+/* ─── TOAST ─── */
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+init();
+</script>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- MODAL PARAMÈTRES                            -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="settings-overlay" style="
+  position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(10px);
+  z-index:400;display:none;align-items:center;justify-content:center;
+" onclick="if(event.target===this)closeSettings()">
+
+  <div style="
+    background:#0d0f22;border:1px solid #1e2240;border-radius:24px;
+    width:780px;max-width:95vw;height:86vh;max-height:680px;
+    display:flex;overflow:hidden;box-shadow:0 40px 120px rgba(0,0,0,.6);
+  ">
+
+    <!-- SIDEBAR PARAMÈTRES -->
+    <div style="
+      width:220px;flex-shrink:0;border-right:1px solid #1e2240;
+      background:#080a14;display:flex;flex-direction:column;padding:24px 0;
+    ">
+      <div style="padding:0 20px 20px;border-bottom:1px solid #1e2240;margin-bottom:12px;">
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px;color:#f0f4ff;">Paramètres</div>
+      </div>
+
+      <div id="stab-compte"    class="stab active"  onclick="showTab('compte')">Mon compte</div>
+      <div id="stab-plan"      class="stab"         onclick="showTab('plan')">Abonnement</div>
+      <div id="stab-apparence" class="stab"         onclick="showTab('apparence')">Apparence</div>
+      <div id="stab-notifs"    class="stab"         onclick="showTab('notifs')">Notifications</div>
+      <div id="stab-securite"  class="stab"         onclick="showTab('securite')">Sécurité</div>
+      <div id="stab-ia"        class="stab"         onclick="showTab('ia')">Comportement IA</div>
+
+      <div style="margin-top:auto;padding:16px 12px 0;">
+        <button onclick="doLogout()" style="
+          width:100%;padding:10px 14px;border-radius:10px;border:1px solid rgba(255,107,107,.25);
+          background:rgba(255,107,107,.08);color:#ff6b6b;font-size:13px;font-weight:500;
+          cursor:pointer;font-family:'Inter',sans-serif;text-align:left;transition:background .15s;
+        ">Se déconnecter</button>
+      </div>
+    </div>
+
+    <!-- CONTENU PARAMÈTRES -->
+    <div style="flex:1;overflow-y:auto;padding:32px 36px;" id="settings-content">
+
+      <!-- ── COMPTE ── -->
+      <div id="tab-compte" class="stab-panel">
+        <div class="s-title">Mon compte</div>
+        <div class="s-sub">Gère tes informations personnelles</div>
+
+        <div class="s-section">
+          <div class="s-label">Prénom</div>
+          <input class="s-input" id="s-prenom" type="text" placeholder="Ton prénom" autocomplete="off" />
+        </div>
+
+        <div class="s-section">
+          <div class="s-label">Adresse e-mail</div>
+          <input class="s-input" id="s-email" type="email" placeholder="ton@email.com" autocomplete="off" />
+          <div class="s-hint">Utilisé pour la connexion et les notifications</div>
+        </div>
+
+        <div class="s-section">
+          <div class="s-label">Avatar</div>
+          <div style="display:flex;align-items:center;gap:16px;margin-top:8px;">
+            <div id="s-avatar-preview" style="
+              width:56px;height:56px;border-radius:50%;
+              background:linear-gradient(135deg,#6c63ff,#00d4ff);
+              display:flex;align-items:center;justify-content:center;
+              font-size:22px;font-weight:700;color:#fff;
+            ">A</div>
+            <div style="font-size:13px;color:#6b7299;line-height:1.6;">
+              L'avatar est généré automatiquement<br>depuis l'initiale de ton prénom.
+            </div>
+          </div>
+        </div>
+
+        <div class="s-divider"></div>
+        <button class="s-btn-primary" onclick="saveAccount()">Enregistrer les modifications</button>
+        <div id="s-account-msg" style="font-size:13px;color:#00d4ff;margin-top:10px;display:none;"></div>
+      </div>
+
+      <!-- ── ABONNEMENT ── -->
+      <div id="tab-plan" class="stab-panel" style="display:none;">
+        <div class="s-title">Abonnement</div>
+        <div class="s-sub">Choisis le plan qui te correspond</div>
+
+        <!-- Plan actuel -->
+        <div id="current-plan-banner" style="
+          background:linear-gradient(135deg,rgba(108,99,255,.12),rgba(0,212,255,.08));
+          border:1px solid rgba(108,99,255,.25);border-radius:14px;
+          padding:16px 20px;margin-bottom:28px;
+          display:flex;align-items:center;justify-content:space-between;
+        ">
+          <div>
+            <div style="font-size:12px;color:#6b7299;margin-bottom:4px;letter-spacing:.06em;text-transform:uppercase;">Plan actuel</div>
+            <div id="current-plan-name" style="font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;color:#f0f4ff;">Gratuit</div>
+          </div>
+          <div id="current-plan-badge" style="
+            background:rgba(108,99,255,.2);border:1px solid rgba(108,99,255,.35);
+            color:#6c63ff;padding:5px 16px;border-radius:100px;
+            font-size:12px;font-weight:700;letter-spacing:.06em;
+          ">ACTIF</div>
+        </div>
+
+        <!-- Plans -->
+        <div style="display:flex;flex-direction:column;gap:14px;">
+
+          <!-- GRATUIT -->
+          <div class="plan-row" id="plan-row-free">
+            <div style="flex:1;">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                <span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px;color:#f0f4ff;">Gratuit</span>
+                <span style="font-size:20px;font-weight:700;color:#f0f4ff;">0€<span style="font-size:13px;font-weight:400;color:#6b7299;">/mois</span></span>
+              </div>
+              <div style="font-size:13px;color:#6b7299;line-height:1.6;">50 messages/jour · Mode rapide & équilibré · 5 conversations</div>
+            </div>
+            <div id="btn-free" class="plan-select-btn outline" onclick="selectPlan('free')">Plan actuel</div>
+          </div>
+
+          <!-- PRO -->
+          <div class="plan-row" id="plan-row-pro">
+            <div style="flex:1;">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                <span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px;color:#f0f4ff;">Pro</span>
+                <span style="font-size:20px;font-weight:700;color:#f0f4ff;">12€<span style="font-size:13px;font-weight:400;color:#6b7299;">/mois</span></span>
+                <span style="background:linear-gradient(135deg,#6c63ff,#00d4ff);color:#fff;font-size:10px;font-weight:700;padding:2px 10px;border-radius:100px;letter-spacing:.04em;">POPULAIRE</span>
+              </div>
+              <div style="font-size:13px;color:#6b7299;line-height:1.6;">Messages illimités · Tous les modes · Mémoire longue · Support prioritaire</div>
+            </div>
+            <div id="btn-pro" class="plan-select-btn filled" onclick="selectPlan('pro')">Choisir Pro</div>
+          </div>
+
+          <!-- EXPERT -->
+          <div class="plan-row" id="plan-row-expert">
+            <div style="flex:1;">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                <span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px;color:#f0f4ff;">Expert</span>
+                <span style="font-size:20px;font-weight:700;color:#f0f4ff;">29€<span style="font-size:13px;font-weight:400;color:#6b7299;">/mois</span></span>
+              </div>
+              <div style="font-size:13px;color:#6b7299;line-height:1.6;">Tout du Pro · API · Personnalité sur mesure · Tableau de bord · Support 24/7</div>
+            </div>
+            <div id="btn-expert" class="plan-select-btn filled" onclick="selectPlan('expert')">Choisir Expert</div>
+          </div>
+        </div>
+
+        <!-- Zone paiement (s'affiche au clic) -->
+        <div id="payment-zone" style="display:none;margin-top:24px;">
+          <div class="s-divider"></div>
+          <div class="s-label" style="margin-bottom:16px;">Choisir un moyen de paiement</div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;">
+            <button class="pay-btn" onclick="payWith('paypal')">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#003087"/><text x="4" y="17" font-size="10" fill="#fff" font-weight="bold">Pay</text><text x="11" y="17" font-size="10" fill="#009cde" font-weight="bold">Pal</text></svg>
+              Payer avec PayPal
+            </button>
+            <button class="pay-btn" onclick="payWith('card')">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f0f4ff" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+              Payer par carte
+            </button>
+          </div>
+          <div style="font-size:12px;color:#6b7299;margin-top:12px;">
+            Paiement 100% sécurisé. Tu peux annuler à tout moment.
+          </div>
+          <div id="payment-soon" style="display:none;margin-top:14px;padding:14px 16px;background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.2);border-radius:12px;font-size:13px;color:#00d4ff;">
+            Les paiements arrivent très bientôt ! Tu seras notifié dès que c'est disponible.
+          </div>
+        </div>
+      </div>
+
+      <!-- ── APPARENCE ── -->
+      <div id="tab-apparence" class="stab-panel" style="display:none;">
+        <div class="s-title">Apparence</div>
+        <div class="s-sub">Personnalise l'interface de Zeno</div>
+
+        <div class="s-section">
+          <div class="s-label">Thème</div>
+          <div style="display:flex;gap:12px;margin-top:8px;">
+            <div class="theme-card active" id="theme-dark" onclick="setTheme('dark')">
+              <div style="width:100%;height:40px;background:#080a14;border-radius:8px 8px 0 0;border-bottom:1px solid #1e2240;"></div>
+              <div style="padding:8px;font-size:12px;color:#f0f4ff;font-weight:500;">Sombre</div>
+            </div>
+            <div class="theme-card" id="theme-light" onclick="setTheme('light')">
+              <div style="width:100%;height:40px;background:#f0f4ff;border-radius:8px 8px 0 0;border-bottom:1px solid #dde4f0;"></div>
+              <div style="padding:8px;font-size:12px;color:#f0f4ff;font-weight:500;">Clair</div>
+            </div>
+            <div class="theme-card" id="theme-midnight" onclick="setTheme('midnight')">
+              <div style="width:100%;height:40px;background:#0a0014;border-radius:8px 8px 0 0;border-bottom:1px solid #2a0050;"></div>
+              <div style="padding:8px;font-size:12px;color:#f0f4ff;font-weight:500;">Minuit</div>
+            </div>
+          </div>
+          <div style="font-size:12px;color:#6b7299;margin-top:8px;">Le thème clair est en cours de développement.</div>
+        </div>
+
+        <div class="s-section">
+          <div class="s-label">Taille du texte</div>
+          <div style="display:flex;gap:10px;margin-top:8px;">
+            <button class="size-btn active" id="size-sm" onclick="setFontSize('sm')">Petit</button>
+            <button class="size-btn" id="size-md" onclick="setFontSize('md')">Moyen</button>
+            <button class="size-btn" id="size-lg" onclick="setFontSize('lg')">Grand</button>
+          </div>
+        </div>
+
+        <div class="s-section">
+          <div class="s-label">Afficher les animations</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
+            <div style="font-size:13px;color:#6b7299;">Logo flottant, transitions douces</div>
+            <div class="s-toggle" id="toggle-anim" onclick="toggleSetting('anim')" data-on="true">
+              <div class="s-toggle-thumb"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="s-divider"></div>
+        <button class="s-btn-primary" onclick="saveAppearance()">Appliquer</button>
+      </div>
+
+      <!-- ── NOTIFICATIONS ── -->
+      <div id="tab-notifs" class="stab-panel" style="display:none;">
+        <div class="s-title">Notifications</div>
+        <div class="s-sub">Gère ce que Zeno te communique</div>
+
+        <div class="s-section">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-size:14px;color:#f0f4ff;font-weight:500;">Nouveautés et mises à jour</div>
+              <div style="font-size:12px;color:#6b7299;margin-top:3px;">Nouvelles fonctionnalités de Zeno IA</div>
+            </div>
+            <div class="s-toggle" id="toggle-updates" onclick="toggleSetting('updates')" data-on="true">
+              <div class="s-toggle-thumb"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="s-divider"></div>
+
+        <div class="s-section">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-size:14px;color:#f0f4ff;font-weight:500;">Conseils d'utilisation</div>
+              <div style="font-size:12px;color:#6b7299;margin-top:3px;">Astuces pour mieux utiliser Zeno</div>
+            </div>
+            <div class="s-toggle" id="toggle-tips" onclick="toggleSetting('tips')" data-on="false">
+              <div class="s-toggle-thumb"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="s-divider"></div>
+
+        <div class="s-section">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-size:14px;color:#f0f4ff;font-weight:500;">Alertes de sécurité</div>
+              <div style="font-size:12px;color:#6b7299;margin-top:3px;">Connexions depuis un nouvel appareil</div>
+            </div>
+            <div class="s-toggle" id="toggle-security" onclick="toggleSetting('security')" data-on="true">
+              <div class="s-toggle-thumb"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SECURITE ── -->
+      <div id="tab-securite" class="stab-panel" style="display:none;">
+        <div class="s-title">Sécurité</div>
+        <div class="s-sub">Protège ton compte Zeno</div>
+
+        <div class="s-section">
+          <div class="s-label">Changer le mot de passe</div>
+          <input class="s-input" id="s-pw-old" type="password" placeholder="Mot de passe actuel" autocomplete="new-password" style="margin-bottom:10px;" />
+          <input class="s-input" id="s-pw-new" type="password" placeholder="Nouveau mot de passe" style="margin-bottom:10px;" />
+          <input class="s-input" id="s-pw-confirm" type="password" placeholder="Confirmer le nouveau mot de passe" />
+          <div id="s-pw-msg" style="font-size:13px;margin-top:10px;display:none;"></div>
+        </div>
+
+        <div class="s-divider"></div>
+        <button class="s-btn-primary" onclick="changePassword()">Mettre à jour le mot de passe</button>
+
+        <div class="s-divider"></div>
+
+        <div class="s-section">
+          <div class="s-label" style="color:#ff6b6b;">Zone de danger</div>
+          <div style="font-size:13px;color:#6b7299;margin:8px 0 14px;">Supprimer définitivement ton compte et toutes tes conversations.</div>
+          <button style="
+            padding:10px 20px;border-radius:10px;border:1px solid rgba(255,107,107,.35);
+            background:rgba(255,107,107,.08);color:#ff6b6b;font-size:13px;font-weight:500;
+            cursor:pointer;font-family:'Inter',sans-serif;transition:background .15s;
+          " onclick="showConfirm('Supprimer le compte ?','Cette action est irréversible. Toutes tes données seront perdues.',()=>alert('Suppression compte — bientôt disponible'))">
+            Supprimer mon compte
+          </button>
+        </div>
+      </div>
+
+      <!-- ── COMPORTEMENT IA ── -->
+      <div id="tab-ia" class="stab-panel" style="display:none;">
+        <div class="s-title">Comportement IA</div>
+        <div class="s-sub">Configure comment Zeno te répond</div>
+
+        <div class="s-section">
+          <div class="s-label">Mode par défaut</div>
+          <select class="s-input" id="s-default-mode" style="cursor:pointer;">
+            <option value="fast">Rapide — Réponses courtes et directes</option>
+            <option value="balanced" selected>Équilibré — Réponses complètes</option>
+            <option value="deep">Approfondi — Analyses détaillées</option>
+          </select>
+        </div>
+
+        <div class="s-section">
+          <div class="s-label">Langue de Zeno</div>
+          <select class="s-input" id="s-lang" style="cursor:pointer;">
+            <option value="fr" selected>Français</option>
+            <option value="en">English</option>
+            <option value="es">Español</option>
+            <option value="de">Deutsch</option>
+          </select>
+        </div>
+
+        <div class="s-section">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-size:14px;color:#f0f4ff;font-weight:500;">Mémoire des conversations</div>
+              <div style="font-size:12px;color:#6b7299;margin-top:3px;">Nova se souvient du contexte de tes échanges</div>
+            </div>
+            <div class="s-toggle" id="toggle-memory" onclick="toggleSetting('memory')" data-on="true">
+              <div class="s-toggle-thumb"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="s-section">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-size:14px;color:#f0f4ff;font-weight:500;">Formatage Markdown</div>
+              <div style="font-size:12px;color:#6b7299;margin-top:3px;">Affiche le gras, les listes et le code formaté</div>
+            </div>
+            <div class="s-toggle" id="toggle-markdown" onclick="toggleSetting('markdown')" data-on="true">
+              <div class="s-toggle-thumb"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="s-divider"></div>
+        <button class="s-btn-primary" onclick="saveIASettings()">Enregistrer</button>
+        <div id="s-ia-msg" style="font-size:13px;color:#00d4ff;margin-top:10px;display:none;"></div>
+      </div>
+
+    </div><!-- /settings-content -->
+
+    <!-- Bouton fermer -->
+    <button onclick="closeSettings()" style="
+      position:absolute;top:20px;right:24px;
+      background:rgba(255,255,255,.06);border:1px solid #1e2240;
+      color:#6b7299;width:32px;height:32px;border-radius:8px;
+      cursor:pointer;font-size:18px;line-height:1;display:flex;
+      align-items:center;justify-content:center;
+    ">×</button>
+
+  </div>
+</div><!-- /settings-overlay -->
+
+
+
+
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- MODAL APPEL VOCAL                           -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="voice-overlay">
+  <div class="voice-modal">
+    <div class="voice-zeno-avatar">
+      <div class="voice-ring"></div>
+      <div class="voice-ring voice-ring-2"></div>
+      <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="vlg" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#6c63ff"/><stop offset="100%" stop-color="#00d4ff"/>
+          </linearGradient>
+        </defs>
+        <path d="M24 3 L42 13.5 L42 34.5 L24 45 L6 34.5 L6 13.5 Z" fill="rgba(108,99,255,.2)" stroke="url(#vlg)" stroke-width="1.5"/>
+        <path d="M27 10 L18 26 L24 26 L21 38 L30 22 L24 22 Z" fill="url(#vlg)"/>
+      </svg>
+    </div>
+
+    <div class="voice-status" id="voice-status">Zeno IA</div>
+    <div class="voice-sub" id="voice-sub">Appuie sur le micro pour commencer à parler</div>
+
+    <div class="voice-wave" id="voice-wave">
+      <div class="voice-wave-bar" style="height:8px"></div>
+      <div class="voice-wave-bar" style="height:16px"></div>
+      <div class="voice-wave-bar" style="height:24px"></div>
+      <div class="voice-wave-bar" style="height:32px"></div>
+      <div class="voice-wave-bar" style="height:24px"></div>
+      <div class="voice-wave-bar" style="height:40px"></div>
+      <div class="voice-wave-bar" style="height:32px"></div>
+      <div class="voice-wave-bar" style="height:24px"></div>
+      <div class="voice-wave-bar" style="height:16px"></div>
+      <div class="voice-wave-bar" style="height:8px"></div>
+      <div class="voice-wave-bar" style="height:24px"></div>
+      <div class="voice-wave-bar" style="height:32px"></div>
+      <div class="voice-wave-bar" style="height:40px"></div>
+      <div class="voice-wave-bar" style="height:32px"></div>
+      <div class="voice-wave-bar" style="height:24px"></div>
+    </div>
+
+    <div class="voice-transcript" id="voice-transcript"></div>
+
+    <div class="voice-controls">
+      <button class="voice-end-btn" onclick="closeVoiceCall()" title="Terminer l'appel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M10.68 13.31a16 16 0 003.41 2.6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.42 19.42 0 01-3.33-2.67m-2.67-3.34a19.79 19.79 0 01-3.07-8.63A2 2 0 014.11 2h3a2 2 0 011.72 2 12.05 12.05 0 00.7 2.81 2 2 0 01-.45 2.11L7.91 10a16 16 0 002.61 3.41"/>
+          <line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>
+      </button>
+
+      <button class="voice-mic-btn" id="voice-mic-btn" onclick="toggleMic()">
+        <svg id="mic-icon" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round">
+          <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+          <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+
+
+</body>
+</html>

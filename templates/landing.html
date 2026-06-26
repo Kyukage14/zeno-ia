@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zeno IA — L'intelligence à ta portée</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:#080a14; --surface:#10132a; --card:#141830; --border:#1e2240;
+  --violet:#6c63ff; --cyan:#00d4ff; --white:#f0f4ff; --muted:#7b82b0;
+  --gradient:linear-gradient(135deg,#6c63ff,#00d4ff);
+}
+html { scroll-behavior:smooth; }
+body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--white); overflow-x:hidden; }
+#canvas-bg { position:fixed; inset:0; z-index:0; pointer-events:none; }
+.orb { position:fixed; border-radius:50%; filter:blur(100px); pointer-events:none; z-index:0; }
+.orb-1 { width:500px;height:500px;background:rgba(108,99,255,.15);top:-100px;left:-100px; }
+.orb-2 { width:400px;height:400px;background:rgba(0,212,255,.1);bottom:100px;right:-80px; }
+
+/* NAV */
+nav {
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:18px 60px;
+  background:rgba(8,10,20,.7);backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--border);
+}
+.nav-logo { display:flex;align-items:center;gap:12px;text-decoration:none; }
+.nav-logo svg { width:38px;height:38px; }
+.nav-logo-text { font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px;background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text; }
+.nav-links { display:flex;gap:36px;list-style:none; }
+.nav-links a { text-decoration:none;color:var(--muted);font-size:14px;font-weight:500;transition:color .2s; }
+.nav-links a:hover { color:var(--white); }
+.nav-actions { display:flex;gap:12px;align-items:center; }
+.btn-ghost { background:transparent;border:1px solid var(--border);color:var(--white);padding:9px 22px;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;transition:border-color .2s,color .2s;font-family:'Inter',sans-serif; }
+.btn-ghost:hover { border-color:var(--violet);color:var(--violet); }
+.btn-primary { background:var(--gradient);border:none;color:#fff;padding:10px 24px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;transition:opacity .2s,transform .2s;font-family:'Inter',sans-serif; }
+.btn-primary:hover { opacity:.88;transform:translateY(-1px); }
+
+/* HERO */
+#hero { position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:120px 40px 80px; }
+.hero-badge { display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(108,99,255,.4);background:rgba(108,99,255,.1);padding:7px 18px;border-radius:100px;font-size:13px;color:var(--cyan);font-weight:500;margin-bottom:32px;letter-spacing:.04em; }
+.hero-badge span { width:6px;height:6px;background:var(--cyan);border-radius:50%;display:inline-block;animation:pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1}50%{opacity:.3} }
+.hero-logo-wrap { margin-bottom:36px; }
+.hero-logo-wrap svg { width:90px;height:90px;filter:drop-shadow(0 0 32px rgba(108,99,255,.6));animation:floatLogo 4s ease-in-out infinite; }
+@keyframes floatLogo { 0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)} }
+h1 { font-family:'Space Grotesk',sans-serif;font-size:clamp(48px,7vw,88px);font-weight:700;line-height:1.05;letter-spacing:-.03em;margin-bottom:24px; }
+.gradient-text { background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text; }
+.hero-sub { font-size:clamp(16px,2vw,20px);color:var(--muted);max-width:560px;line-height:1.7;margin-bottom:48px;font-weight:300; }
+.hero-cta { display:flex;gap:16px;justify-content:center;flex-wrap:wrap; }
+.btn-hero { background:var(--gradient);border:none;color:#fff;padding:16px 40px;border-radius:14px;font-size:16px;font-weight:600;cursor:pointer;transition:opacity .2s,transform .2s,box-shadow .2s;font-family:'Inter',sans-serif;box-shadow:0 0 40px rgba(108,99,255,.35); }
+.btn-hero:hover { opacity:.88;transform:translateY(-2px);box-shadow:0 0 60px rgba(108,99,255,.5); }
+.btn-hero-outline { background:transparent;border:1px solid var(--border);color:var(--white);padding:16px 40px;border-radius:14px;font-size:16px;font-weight:500;cursor:pointer;transition:border-color .2s,transform .2s;font-family:'Inter',sans-serif; }
+.btn-hero-outline:hover { border-color:var(--violet);transform:translateY(-2px); }
+.hero-stats { display:flex;gap:60px;margin-top:80px;justify-content:center;flex-wrap:wrap; }
+.hero-stat { text-align:center; }
+.hero-stat-num { font-family:'Space Grotesk',sans-serif;font-size:36px;font-weight:700;background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text; }
+.hero-stat-label { font-size:13px;color:var(--muted);margin-top:4px;letter-spacing:.04em; }
+.hero-divider { width:1px;height:60px;background:var(--border);margin:auto; }
+
+/* SECTIONS */
+.section { position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:100px 40px; }
+.section-eye { font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--violet);margin-bottom:14px; }
+.section-title { font-family:'Space Grotesk',sans-serif;font-size:clamp(28px,4vw,48px);font-weight:700;line-height:1.15;letter-spacing:-.02em;margin-bottom:16px; }
+.section-sub { color:var(--muted);font-size:16px;max-width:520px;line-height:1.7;margin-bottom:60px; }
+
+/* FEATURES */
+.features-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:20px; }
+.feat-card { background:var(--card);border:1px solid var(--border);border-radius:20px;padding:36px 30px;transition:border-color .3s,transform .3s;position:relative;overflow:hidden; }
+.feat-card::before { content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--gradient);opacity:0;transition:opacity .3s; }
+.feat-card:hover { border-color:rgba(108,99,255,.4);transform:translateY(-4px); }
+.feat-card:hover::before { opacity:1; }
+.feat-icon { width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:20px;background:rgba(108,99,255,.12);border:1px solid rgba(108,99,255,.2); }
+.feat-card h3 { font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:600;margin-bottom:10px; }
+.feat-card p { font-size:14px;color:var(--muted);line-height:1.7; }
+
+/* PRICING */
+.pricing-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:20px;align-items:start; }
+.price-card { background:var(--card);border:1px solid var(--border);border-radius:24px;padding:40px 32px;transition:transform .3s; }
+.price-card:hover { transform:translateY(-4px); }
+.price-card.popular { border-color:var(--violet);background:linear-gradient(180deg,rgba(108,99,255,.12) 0%,var(--card) 60%);position:relative; }
+.popular-badge { position:absolute;top:-14px;left:50%;transform:translateX(-50%);background:var(--gradient);color:#fff;font-size:12px;font-weight:600;padding:5px 18px;border-radius:100px;letter-spacing:.04em;white-space:nowrap; }
+.plan-name { font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:600;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px; }
+.plan-price { font-family:'Space Grotesk',sans-serif;font-size:48px;font-weight:700;line-height:1;margin-bottom:6px; }
+.plan-price span { font-size:18px;font-weight:400;color:var(--muted); }
+.plan-desc { font-size:13px;color:var(--muted);margin-bottom:30px;line-height:1.6; }
+.plan-features { list-style:none;display:flex;flex-direction:column;gap:12px;margin-bottom:32px; }
+.plan-features li { display:flex;align-items:center;gap:10px;font-size:14px;color:var(--white); }
+.plan-features li::before { content:'✓';width:20px;height:20px;border-radius:50%;background:rgba(108,99,255,.2);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--cyan);flex-shrink:0;text-align:center;line-height:20px; }
+.btn-plan { width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer;transition:opacity .2s,transform .2s;font-family:'Inter',sans-serif; }
+.btn-plan.outline { background:transparent;border:1px solid var(--border);color:var(--white); }
+.btn-plan.outline:hover { border-color:var(--violet); }
+.btn-plan.filled { background:var(--gradient);border:none;color:#fff;box-shadow:0 0 30px rgba(108,99,255,.3); }
+.btn-plan.filled:hover { opacity:.88;transform:translateY(-1px); }
+
+/* DEMO */
+.demo-wrap { position:relative;z-index:1;margin:0 auto;padding:0 40px 100px;max-width:900px; }
+.demo-frame { border-radius:20px;overflow:hidden;border:1px solid var(--border);background:var(--surface);box-shadow:0 40px 120px rgba(0,0,0,.6),0 0 0 1px var(--border); }
+.demo-bar { background:#0d0f22;padding:14px 20px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border); }
+.demo-dot { width:12px;height:12px;border-radius:50%; }
+.demo-dot.r{background:#ff5f57}.demo-dot.y{background:#ffbd2e}.demo-dot.g{background:#28c840}
+.demo-url { flex:1;margin:0 16px;background:rgba(255,255,255,.05);border-radius:8px;padding:5px 14px;font-size:12px;color:var(--muted); }
+.demo-chat-wrap { display:flex;height:340px; }
+.demo-sidebar { width:220px;border-right:1px solid var(--border);background:#0a0c1e;padding:16px;display:flex;flex-direction:column;gap:12px; }
+.demo-sidebar-logo { display:flex;align-items:center;gap:8px;padding:8px; }
+.demo-sidebar-logo svg { width:24px;height:24px; }
+.demo-sidebar-logo span { font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text; }
+.demo-conv { background:rgba(108,99,255,.1);border-radius:8px;padding:9px 12px;font-size:12px;color:var(--muted); }
+.demo-conv.active { color:var(--white);background:rgba(108,99,255,.2); }
+.demo-messages { flex:1;padding:24px;display:flex;flex-direction:column;gap:16px;overflow:hidden; }
+.demo-msg { max-width:75%;padding:12px 16px;border-radius:14px;font-size:13px;line-height:1.6; }
+.demo-msg.user { align-self:flex-end;background:var(--gradient);color:#fff;border-bottom-right-radius:4px; }
+.demo-msg.ai { align-self:flex-start;background:var(--card);border:1px solid var(--border);color:var(--white);border-bottom-left-radius:4px; }
+
+/* CTA */
+.cta-section { position:relative;z-index:1;text-align:center;padding:80px 40px 120px;max-width:700px;margin:0 auto; }
+.cta-section h2 { font-family:'Space Grotesk',sans-serif;font-size:clamp(32px,5vw,56px);font-weight:700;line-height:1.1;letter-spacing:-.02em;margin-bottom:20px; }
+.cta-section p { color:var(--muted);font-size:16px;margin-bottom:40px;line-height:1.7; }
+
+/* FOOTER */
+footer { position:relative;z-index:1;border-top:1px solid var(--border);padding:30px 60px;display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:13px; }
+footer a { color:var(--muted);text-decoration:none; }
+footer a:hover { color:var(--white); }
+
+/* MODAL */
+.modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);z-index:200;display:none;align-items:center;justify-content:center; }
+.modal-overlay.open { display:flex; }
+.modal { background:var(--card);border:1px solid var(--border);border-radius:24px;padding:48px 44px;width:420px;position:relative; }
+.modal-close { position:absolute;top:20px;right:20px;background:transparent;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1; }
+.modal h2 { font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;margin-bottom:8px; }
+.modal p { color:var(--muted);font-size:14px;margin-bottom:30px; }
+.modal-tabs { display:flex;border-bottom:1px solid var(--border);margin-bottom:28px; }
+.modal-tab { padding:10px 0;font-size:14px;font-weight:600;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;margin-right:28px;transition:color .2s,border-color .2s;background:none;border-left:none;border-right:none;border-top:none;font-family:'Inter',sans-serif; }
+.modal-tab.active { color:var(--white);border-bottom-color:var(--violet); }
+.modal-form { display:flex;flex-direction:column;gap:14px; }
+.modal-input { background:rgba(255,255,255,.05);border:1px solid var(--border);color:var(--white);padding:13px 16px;border-radius:12px;font-size:14px;font-family:'Inter',sans-serif;outline:none;transition:border-color .2s; }
+.modal-input:focus { border-color:var(--violet); }
+.modal-input::placeholder { color:var(--muted); }
+.modal-submit { background:var(--gradient);border:none;color:#fff;padding:14px;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;margin-top:4px;transition:opacity .2s,transform .2s; }
+.modal-submit:hover { opacity:.88;transform:translateY(-1px); }
+.modal-submit:disabled { opacity:.5;cursor:not-allowed; }
+
+/* MOBILE */
+@media(max-width:768px) {
+  nav { padding:16px 20px; }
+  .nav-links { display:none; }
+  .features-grid,.pricing-grid { grid-template-columns:1fr; }
+  .hero-divider { display:none; }
+  footer { flex-direction:column;gap:12px;text-align:center; }
+  .demo-sidebar { display:none; }
+  .modal { width:92vw;padding:32px 24px; }
+  .section { padding:60px 20px; }
+}
+
+/* ─── PARTICLES ─── */
+#particles-canvas {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+}
+
+/* ─── SCROLL REVEAL ─── */
+.reveal {
+  opacity: 0;
+  transform: translateY(32px);
+  transition: opacity .7s ease, transform .7s ease;
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.reveal-delay-1 { transition-delay: .1s; }
+.reveal-delay-2 { transition-delay: .2s; }
+.reveal-delay-3 { transition-delay: .3s; }
+.reveal-delay-4 { transition-delay: .4s; }
+.reveal-delay-5 { transition-delay: .5s; }
+
+/* ─── HERO TITLE GRADIENT ANIMATION ─── */
+@keyframes gradientShift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.gradient-text {
+  background: linear-gradient(270deg, #6c63ff, #00d4ff, #a855f7, #6c63ff);
+  background-size: 400% 400%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gradientShift 6s ease infinite;
+}
+
+/* ─── FLOATING CARDS ─── */
+@keyframes floatCard {
+  0%,100% { transform: translateY(0) rotate(0deg); }
+  33%      { transform: translateY(-10px) rotate(1deg); }
+  66%      { transform: translateY(5px) rotate(-0.5deg); }
+}
+.feat-card:nth-child(1) { animation: floatCard 7s ease-in-out infinite; }
+.feat-card:nth-child(2) { animation: floatCard 8s ease-in-out infinite .5s; }
+.feat-card:nth-child(3) { animation: floatCard 6.5s ease-in-out infinite 1s; }
+.feat-card:nth-child(4) { animation: floatCard 9s ease-in-out infinite .3s; }
+.feat-card:nth-child(5) { animation: floatCard 7.5s ease-in-out infinite .8s; }
+.feat-card:nth-child(6) { animation: floatCard 8.5s ease-in-out infinite .2s; }
+
+/* ─── HERO STATS COUNTER ─── */
+.hero-stat-num {
+  display: inline-block;
+  transition: transform .3s;
+}
+.hero-stat:hover .hero-stat-num { transform: scale(1.15); }
+
+/* ─── TYPING CURSOR ─── */
+.typing-cursor::after {
+  content: '|';
+  animation: blink .7s infinite;
+  color: #00d4ff;
+  font-weight: 300;
+  margin-left: 2px;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+/* ─── NAV SCROLL EFFECT ─── */
+nav.scrolled {
+  background: rgba(8,10,20,.95);
+  box-shadow: 0 1px 40px rgba(0,0,0,.4);
+}
+
+/* ─── HERO BADGE GLOW ─── */
+.hero-badge {
+  animation: badgeGlow 3s ease-in-out infinite;
+}
+@keyframes badgeGlow {
+  0%,100% { box-shadow: 0 0 0 0 rgba(0,212,255,0); }
+  50%      { box-shadow: 0 0 20px 4px rgba(0,212,255,.15); }
+}
+
+/* ─── LOGO ORBIT RING ─── */
+.hero-logo-wrap {
+  position: relative;
+  display: inline-block;
+}
+.hero-logo-wrap::before {
+  content: '';
+  position: absolute;
+  inset: -16px;
+  border-radius: 50%;
+  border: 1px solid rgba(108,99,255,.2);
+  animation: orbitSpin 12s linear infinite;
+}
+.hero-logo-wrap::after {
+  content: '';
+  position: absolute;
+  inset: -32px;
+  border-radius: 50%;
+  border: 1px dashed rgba(0,212,255,.12);
+  animation: orbitSpin 20s linear infinite reverse;
+}
+@keyframes orbitSpin { to { transform: rotate(360deg); } }
+
+/* ─── DEMO FRAME GLOW ─── */
+.demo-frame {
+  animation: demoGlow 4s ease-in-out infinite;
+}
+@keyframes demoGlow {
+  0%,100% { box-shadow: 0 40px 120px rgba(0,0,0,.6), 0 0 0 1px #1e2240; }
+  50%      { box-shadow: 0 40px 120px rgba(0,0,0,.6), 0 0 40px rgba(108,99,255,.15), 0 0 0 1px rgba(108,99,255,.3); }
+}
+
+/* ─── PRICE CARD POPULAR PULSE ─── */
+.price-card.popular {
+  animation: popularPulse 3s ease-in-out infinite;
+}
+@keyframes popularPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(108,99,255,0); }
+  50%      { box-shadow: 0 0 40px 8px rgba(108,99,255,.12); }
+}
+
+/* ─── METEOR STREAKS ─── */
+.meteor {
+  position: fixed;
+  width: 2px;
+  height: 60px;
+  background: linear-gradient(to bottom, rgba(108,99,255,0), rgba(108,99,255,.8), rgba(0,212,255,.4));
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 0;
+  animation: meteorFall linear infinite;
+  opacity: 0;
+}
+@keyframes meteorFall {
+  0%   { opacity: 0; transform: translateY(-100px) translateX(0) rotate(15deg); }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { opacity: 0; transform: translateY(110vh) translateX(-60px) rotate(15deg); }
+}
+
+</style>
+</head>
+<body>
+<canvas id="particles-canvas"></canvas>
+<div class="meteor" style="left:10%;animation-duration:4.0s;animation-delay:0.0s;"></div>
+<div class="meteor" style="left:25%;animation-duration:5.5s;animation-delay:0.8s;"></div>
+<div class="meteor" style="left:40%;animation-duration:7.0s;animation-delay:1.6s;"></div>
+<div class="meteor" style="left:55%;animation-duration:8.5s;animation-delay:2.4000000000000004s;"></div>
+<div class="meteor" style="left:70%;animation-duration:10.0s;animation-delay:3.2s;"></div>
+<div class="meteor" style="left:85%;animation-duration:11.5s;animation-delay:4.0s;"></div>
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<canvas id="canvas-bg"></canvas>
+
+<!-- NAV -->
+<nav>
+  <a href="#" class="nav-logo">
+    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="lg1" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#6c63ff"/><stop offset="100%" stop-color="#00d4ff"/>
+        </linearGradient>
+        <linearGradient id="lg2" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#6c63ff" stop-opacity=".25"/><stop offset="100%" stop-color="#00d4ff" stop-opacity=".25"/>
+        </linearGradient>
+      </defs>
+      <path d="M24 3 L42 13.5 L42 34.5 L24 45 L6 34.5 L6 13.5 Z" fill="url(#lg2)" stroke="url(#lg1)" stroke-width="1.5"/>
+      <path d="M27 10 L18 26 L24 26 L21 38 L30 22 L24 22 Z" fill="url(#lg1)"/>
+    </svg>
+    <span class="nav-logo-text">Zeno IA</span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="#features">Fonctionnalités</a></li>
+    <li><a href="#pricing">Tarifs</a></li>
+    <li><a href="#demo">Aperçu</a></li>
+  </ul>
+  <div class="nav-actions">
+    <button class="btn-ghost" onclick="openModal('login')">Connexion</button>
+    <button class="btn-primary" onclick="openModal('signup')">S'inscrire</button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section id="hero">
+  <div class="hero-badge"><span></span>Nouvelle génération d'IA — Version 2.0</div>
+  <div class="hero-logo-wrap">
+    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="hlg1" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#6c63ff"/><stop offset="100%" stop-color="#00d4ff"/>
+        </linearGradient>
+        <linearGradient id="hlg2" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#6c63ff" stop-opacity=".2"/><stop offset="100%" stop-color="#00d4ff" stop-opacity=".2"/>
+        </linearGradient>
+      </defs>
+      <path d="M24 3 L42 13.5 L42 34.5 L24 45 L6 34.5 L6 13.5 Z" fill="url(#hlg2)" stroke="url(#hlg1)" stroke-width="1.5"/>
+      <path d="M27 10 L18 26 L24 26 L21 38 L30 22 L24 22 Z" fill="url(#hlg1)"/>
+    </svg>
+  </div>
+  <h1>L'IA qui pense<br><span class="gradient-text">avec toi</span></h1>
+  <p class="hero-sub" id="hero-sub">Zeno est ton assistant intelligent nouvelle génération.<br>Rapide, précis et toujours disponible pour créer, apprendre et réfléchir.</p>
+  <div class="hero-cta">
+    <button class="btn-hero" onclick="openModal('signup')">Commencer gratuitement →</button>
+    <button class="btn-hero-outline" onclick="document.getElementById('demo').scrollIntoView({behavior:'smooth'})">Voir l'aperçu</button>
+  </div>
+  <div class="hero-stats">
+    <div class="hero-stat"><div class="hero-stat-num">10x</div><div class="hero-stat-label">Plus rapide</div></div>
+    <div class="hero-divider"></div>
+    <div class="hero-stat"><div class="hero-stat-num">99%</div><div class="hero-stat-label">De précision</div></div>
+    <div class="hero-divider"></div>
+    <div class="hero-stat"><div class="hero-stat-num">24/7</div><div class="hero-stat-label">Disponible</div></div>
+    <div class="hero-divider"></div>
+    <div class="hero-stat"><div class="hero-stat-num">3</div><div class="hero-stat-label">Modes de réponse</div></div>
+  </div>
+</section>
+
+<!-- DEMO -->
+<div id="demo" class="demo-wrap">
+  <div class="demo-frame">
+    <div class="demo-bar">
+      <div class="demo-dot r"></div><div class="demo-dot y"></div><div class="demo-dot g"></div>
+      <div class="demo-url">zeno-ia.app</div>
+    </div>
+    <div class="demo-chat-wrap">
+      <div class="demo-sidebar">
+        <div class="demo-sidebar-logo">
+          <svg viewBox="0 0 48 48" fill="none"><defs><linearGradient id="dlg" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#6c63ff"/><stop offset="100%" stop-color="#00d4ff"/></linearGradient></defs><path d="M24 3 L42 13.5 L42 34.5 L24 45 L6 34.5 L6 13.5 Z" fill="rgba(108,99,255,.2)" stroke="url(#dlg)" stroke-width="1.5"/><path d="M27 10 L18 26 L24 26 L21 38 L30 22 L24 22 Z" fill="url(#dlg)"/></svg>
+          <span>Zeno IA</span>
+        </div>
+        <div class="demo-conv active">Aide Python</div>
+        <div class="demo-conv">Analyse de texte</div>
+        <div class="demo-conv">Idées de projet</div>
+      </div>
+      <div class="demo-messages">
+        <div class="demo-msg user">Comment fonctionne une liste en Python ?</div>
+        <div class="demo-msg ai">Une liste en Python est une collection ordonnée et modifiable. Tu peux y stocker n'importe quel type de données et y accéder par index : <strong>ma_liste[0]</strong></div>
+        <div class="demo-msg user">Et comment on l'itère ?</div>
+        <div class="demo-msg ai">Avec une boucle <strong>for</strong> : <code>for item in ma_liste:</code> — simple et élégant.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section id="features" class="section reveal">
+  <p class="section-eye">Fonctionnalités</p>
+  <h2 class="section-title">Conçu pour<br><span class="gradient-text">l'excellence</span></h2>
+  <p class="section-sub">Chaque fonctionnalité a été pensée pour t'aider à aller plus loin.</p>
+  <div class="features-grid">
+    <div class="feat-card reveal reveal-delay-1"><div class="feat-icon">⚡</div><h3>Réponses ultra-rapides</h3><p>Mode rapide pour des réponses immédiates, mode approfondi pour des analyses poussées.</p></div>
+    <div class="feat-card reveal reveal-delay-2"><div class="feat-icon">🎙️</div><h3>Appels vocaux</h3><p>Parle directement à Zeno. Elle t'écoute et te répond à voix haute, comme une vraie conversation.</p></div>
+    <div class="feat-card reveal reveal-delay-3"><div class="feat-icon">💬</div><h3>Multi-conversations</h3><p>Gère plusieurs fils de discussion en parallèle, chacun avec son propre contexte.</p></div>
+    <div class="feat-card reveal reveal-delay-4"><div class="feat-icon">🔒</div><h3>Privé & sécurisé</h3><p>Tes conversations restent les tiennes. Aucune donnée partagée sans ton accord.</p></div>
+    <div class="feat-card reveal reveal-delay-5"><div class="feat-icon">🎨</div><h3>Génération d'images</h3><p>Décris ce que tu imagines, Zeno le crée pour toi en quelques secondes.</p></div>
+    <div class="feat-card reveal reveal-delay-5"><div class="feat-icon">🧠</div><h3>Expert en code</h3><p>Python, JavaScript, React, SQL… Zeno écrit, analyse et débogue ton code.</p></div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section id="pricing" class="section reveal" style="padding-top:40px;">
+  <p class="section-eye">Tarifs</p>
+  <h2 class="section-title">Simple et<br><span class="gradient-text">transparent</span></h2>
+  <p class="section-sub">Commence gratuitement, évolue quand tu en as besoin.</p>
+  <div class="pricing-grid">
+    <div class="price-card">
+      <p class="plan-name">Gratuit</p>
+      <div class="plan-price">0€<span>/mois</span></div>
+      <p class="plan-desc">Pour découvrir Zeno et ses capacités essentielles.</p>
+      <ul class="plan-features"><li>50 messages / jour</li><li>Mode rapide & équilibré</li><li>5 conversations sauvegardées</li><li>Support communauté</li></ul>
+      <button class="btn-plan outline" onclick="openModal('signup')">Commencer</button>
+    </div>
+    <div class="price-card popular">
+      <div class="popular-badge">Le plus populaire</div>
+      <p class="plan-name">Pro</p>
+      <div class="plan-price">12€<span>/mois</span></div>
+      <p class="plan-desc">Pour les utilisateurs qui veulent tirer le meilleur de Zeno.</p>
+      <ul class="plan-features"><li>Messages illimités</li><li>Tous les modes</li><li>Conversations illimitées</li><li>Appels vocaux illimités</li><li>Support prioritaire</li></ul>
+      <button class="btn-plan filled" onclick="openModal('signup')">Choisir Pro</button>
+    </div>
+    <div class="price-card">
+      <p class="plan-name">Expert</p>
+      <div class="plan-price">29€<span>/mois</span></div>
+      <p class="plan-desc">Pour les professionnels et équipes exigeantes.</p>
+      <ul class="plan-features"><li>Tout du plan Pro</li><li>API personnalisée</li><li>Personnalité Zeno sur mesure</li><li>Tableau de bord analytique</li><li>Support dédié 24/7</li></ul>
+      <button class="btn-plan outline" onclick="openModal('signup')">Contacter</button>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<div class="cta-section reveal">
+  <h2>Prêt à<br><span class="gradient-text">penser plus vite ?</span></h2>
+  <p>Rejoins des milliers d'utilisateurs qui font confiance à Zeno chaque jour.</p>
+  <button class="btn-hero" onclick="openModal('signup')">Créer un compte gratuit →</button>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <svg width="22" height="22" viewBox="0 0 48 48" fill="none"><defs><linearGradient id="flg" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#6c63ff"/><stop offset="100%" stop-color="#00d4ff"/></linearGradient></defs><path d="M24 3 L42 13.5 L42 34.5 L24 45 L6 34.5 L6 13.5 Z" fill="rgba(108,99,255,.2)" stroke="url(#flg)" stroke-width="1.5"/><path d="M27 10 L18 26 L24 26 L21 38 L30 22 L24 22 Z" fill="url(#flg)"/></svg>
+    <span style="font-family:'Space Grotesk',sans-serif;font-weight:700;">Zeno IA</span>
+  </div>
+  <span>© 2025 Zeno IA — Tous droits réservés</span>
+  <div style="display:flex;gap:24px;"><a href="#">Confidentialité</a><a href="#">CGU</a><a href="#">Contact</a></div>
+</footer>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">×</button>
+    <h2 id="modal-title">Connexion</h2>
+    <p id="modal-sub">Bienvenue de retour sur Zeno IA</p>
+    <div class="modal-tabs">
+      <button class="modal-tab active" id="tab-login" onclick="switchTab('login')">Connexion</button>
+      <button class="modal-tab" id="tab-signup" onclick="switchTab('signup')">Inscription</button>
+    </div>
+    <div class="modal-form">
+      <div id="field-name" style="display:none;">
+        <input class="modal-input" id="input-prenom" type="text" placeholder="Ton prénom" style="width:100%;"/>
+      </div>
+      <input class="modal-input" id="input-email" type="email" placeholder="Adresse e-mail" autocomplete="email"/>
+      <input class="modal-input" id="input-password" type="password" placeholder="Mot de passe" autocomplete="current-password"/>
+      <div id="modal-error" style="color:#ff6b6b;font-size:13px;display:none;margin-top:-4px;"></div>
+      <label id="remember-wrap" style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;color:#7b82b0;">
+        <input type="checkbox" id="remember-me" style="width:16px;height:16px;accent-color:#6c63ff;cursor:pointer;" checked />
+        Rester connecté
+      </label>
+      <button class="modal-submit" onclick="submitAuth()" id="modal-btn">Se connecter →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas-bg');
+const ctx = canvas.getContext('2d');
+function resize(){ canvas.width=window.innerWidth; canvas.height=window.innerHeight; }
+resize(); window.addEventListener('resize',resize);
+const GRID=60; let mx=0,my=0;
+document.addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY;});
+function drawGrid(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const cols=Math.ceil(canvas.width/GRID)+1, rows=Math.ceil(canvas.height/GRID)+1;
+  for(let c=0;c<cols;c++) for(let r=0;r<rows;r++){
+    const x=c*GRID,y=r*GRID,dist=Math.hypot(x-mx,y-my),intensity=Math.max(0,1-dist/250);
+    ctx.beginPath(); ctx.arc(x,y,1.5+intensity*2,0,Math.PI*2);
+    ctx.fillStyle=`rgba(108,99,255,${0.04+intensity*0.18})`; ctx.fill();
+  }
+  requestAnimationFrame(drawGrid);
+}
+drawGrid();
+
+let currentTab='login';
+function openModal(tab){ document.getElementById('modal').classList.add('open'); switchTab(tab||'login'); }
+function closeModal(){ document.getElementById('modal').classList.remove('open'); document.getElementById('modal-error').style.display='none'; }
+function switchTab(tab){
+  currentTab=tab;
+  const isLogin=tab==='login';
+  document.getElementById('tab-login').className='modal-tab'+(isLogin?' active':'');
+  document.getElementById('tab-signup').className='modal-tab'+(!isLogin?' active':'');
+  document.getElementById('modal-title').textContent=isLogin?'Connexion':'Inscription';
+  document.getElementById('modal-sub').textContent=isLogin?'Bienvenue de retour sur Zeno IA':'Crée ton compte gratuitement';
+  document.getElementById('modal-btn').textContent=isLogin?'Se connecter →':'Créer mon compte →';
+  document.getElementById('field-name').style.display=isLogin?'none':'block';
+  document.getElementById('remember-wrap').style.display=isLogin?'flex':'none';
+  document.getElementById('modal-error').style.display='none';
+}
+async function submitAuth(){
+  const email=document.getElementById('input-email').value.trim();
+  const password=document.getElementById('input-password').value;
+  const prenom=document.getElementById('input-prenom').value.trim();
+  const errEl=document.getElementById('modal-error');
+  const btn=document.getElementById('modal-btn');
+  if(!email||!password){ errEl.textContent='Merci de remplir tous les champs.'; errEl.style.display='block'; return; }
+  btn.textContent='Chargement…'; btn.disabled=true;
+  try {
+    const rememberMe = document.getElementById('remember-me')?.checked ?? true;
+    const endpoint=currentTab==='login'?'/login':'/register';
+    const body=currentTab==='login'?{email,password,remember_me:rememberMe}:{email,password,prenom};
+    const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const data=await res.json();
+    if(data.ok){ window.location.href='/app'; }
+    else { errEl.textContent=data.error||'Une erreur est survenue.'; errEl.style.display='block'; btn.textContent=currentTab==='login'?'Se connecter →':'Créer mon compte →'; btn.disabled=false; }
+  } catch(e){ errEl.textContent='Impossible de contacter le serveur.'; errEl.style.display='block'; btn.textContent=currentTab==='login'?'Se connecter →':'Créer mon compte →'; btn.disabled=false; }
+}
+document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&document.getElementById('modal').classList.contains('open')) submitAuth(); });
+</script>
+
+<script>
+/* ─── PARTICLES ─── */
+(function(){
+  const canvas = document.getElementById('particles-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let W, H, particles = [];
+
+  function resize(){ W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+  resize(); window.addEventListener('resize', resize);
+
+  // Create particles
+  for(let i = 0; i < 80; i++){
+    particles.push({
+      x: Math.random() * 2000,
+      y: Math.random() * 1200,
+      r: Math.random() * 1.5 + 0.3,
+      dx: (Math.random() - 0.5) * 0.3,
+      dy: (Math.random() - 0.5) * 0.3,
+      alpha: Math.random() * 0.5 + 0.1,
+      color: Math.random() > 0.5 ? '108,99,255' : '0,212,255',
+    });
+  }
+
+  let mx = W/2, my = H/2;
+  document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+
+    // Draw connections between nearby particles
+    for(let i = 0; i < particles.length; i++){
+      for(let j = i+1; j < particles.length; j++){
+        const dx = particles[i].x - particles[j].x;
+        const dy = particles[i].y - particles[j].y;
+        const dist = Math.sqrt(dx*dx+dy*dy);
+        if(dist < 120){
+          ctx.beginPath();
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(particles[j].x, particles[j].y);
+          ctx.strokeStyle = `rgba(108,99,255,${(1-dist/120)*0.12})`;
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Draw particles
+    particles.forEach(p => {
+      // Mouse repulsion
+      const mdx = p.x - mx, mdy = p.y - my;
+      const mdist = Math.sqrt(mdx*mdx+mdy*mdy);
+      if(mdist < 100){
+        p.x += mdx/mdist * 0.8;
+        p.y += mdy/mdist * 0.8;
+      }
+
+      p.x += p.dx; p.y += p.dy;
+      if(p.x < 0) p.x = W; if(p.x > W) p.x = 0;
+      if(p.y < 0) p.y = H; if(p.y > H) p.y = 0;
+
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(${p.color},${p.alpha})`;
+      ctx.fill();
+    });
+
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+/* ─── SCROLL REVEAL ─── */
+(function(){
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if(e.isIntersecting){ e.target.classList.add('visible'); }
+    });
+  }, { threshold: 0.12 });
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+})();
+
+/* ─── NAV SCROLL EFFECT ─── */
+window.addEventListener('scroll', () => {
+  document.querySelector('nav').classList.toggle('scrolled', window.scrollY > 40);
+});
+
+/* ─── TYPING EFFECT FOR HERO SUBTITLE ─── */
+(function(){
+  const el = document.getElementById('hero-sub');
+  if(!el) return;
+  const texts = [
+    'Rapide, précis et toujours disponible pour créer, apprendre et réfléchir.',
+    'Parle à Zeno — par écrit ou en vocal — et il te répond instantanément.',
+    'Expert en code, images, rédaction et bien plus encore.',
+  ];
+  let ti = 0, ci = 0, deleting = false;
+  el.classList.add('typing-cursor');
+
+  function type(){
+    const current = texts[ti];
+    if(!deleting){
+      el.textContent = current.slice(0, ci+1);
+      ci++;
+      if(ci === current.length){ deleting = true; setTimeout(type, 2200); return; }
+      setTimeout(type, 38);
+    } else {
+      el.textContent = current.slice(0, ci-1);
+      ci--;
+      if(ci === 0){ deleting = false; ti = (ti+1)%texts.length; setTimeout(type, 400); return; }
+      setTimeout(type, 18);
+    }
+  }
+  setTimeout(type, 1200);
+})();
+
+/* ─── HERO STATS COUNTER ANIMATION ─── */
+(function(){
+  const stats = [
+    { el: null, target: 10, suffix: 'x', prefix: '' },
+    { el: null, target: 99, suffix: '%', prefix: '' },
+    { el: null, target: 24, suffix: '/7', prefix: '' },
+    { el: null, target: 3,  suffix: '',  prefix: '' },
+  ];
+  const els = document.querySelectorAll('.hero-stat-num');
+  els.forEach((el, i) => { if(stats[i]) stats[i].el = el; });
+
+  const observer = new IntersectionObserver(entries => {
+    if(!entries[0].isIntersecting) return;
+    stats.forEach(s => {
+      if(!s.el) return;
+      let current = 0;
+      const step = s.target / 40;
+      const timer = setInterval(() => {
+        current = Math.min(current + step, s.target);
+        s.el.textContent = s.prefix + Math.round(current) + s.suffix;
+        if(current >= s.target) clearInterval(timer);
+      }, 30);
+    });
+    observer.disconnect();
+  }, { threshold: 0.5 });
+
+  const heroStats = document.querySelector('.hero-stats');
+  if(heroStats) observer.observe(heroStats);
+})();
+</script>
+
+</body>
+</html>

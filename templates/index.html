@@ -1336,15 +1336,26 @@ let isSpeaking     = false;
 let waveInterval   = null;
 let synth          = window.speechSynthesis;
 
-function openVoiceCall() {
+async function openVoiceCall() {
   document.getElementById('voice-overlay').classList.add('open');
   document.getElementById('voice-call-btn').classList.add('active');
   startWaveIdle();
+  setVoiceStatus('Zeno IA', 'Appuie sur le micro pour commencer à parler');
 
-  // Create a voice conversation
-  fetch('/new', { method: 'POST' })
-    .then(r => r.json())
-    .then(d => { voiceConvId = d.id; });
+  // Utilise la conv existante ou en crée une nouvelle
+  if (!currentId) {
+    try {
+      const r = await fetch('/new', { method: 'POST' });
+      const d = await r.json();
+      voiceConvId = d.id;
+      await loadConvs();
+    } catch(e) {
+      setVoiceStatus('Erreur', 'Impossible de se connecter au serveur');
+      return;
+    }
+  } else {
+    voiceConvId = currentId;
+  }
 }
 
 function closeVoiceCall() {
@@ -1435,21 +1446,33 @@ async function sendVoiceMessage(text) {
   startWaveThinking();
 
   try {
-    const res  = await fetch('/chat/' + voiceConvId, {
+    // Si pas de conv id, en créer une
+    if (!voiceConvId) {
+      const nr = await fetch('/new', { method: 'POST' });
+      const nd = await nr.json();
+      voiceConvId = nd.id;
+    }
+
+    const res = await fetch('/chat/' + voiceConvId, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: text, mode: 'fast', voice: true })
     });
+
+    if (!res.ok) throw new Error('Serveur: ' + res.status);
+
     const data = await res.json();
     const reply = data.response;
 
-    setVoiceStatus('Zeno parle...', reply.length > 100 ? reply.slice(0, 100) + '…' : reply);
-    startWaveSpeaking();
+    if (!reply) throw new Error('Réponse vide');
+
+    setVoiceStatus('Zeno parle...', reply.length > 120 ? reply.slice(0, 120) + '…' : reply);
     speakText(reply);
 
   } catch(e) {
+    console.error('Voice error:', e);
     isSpeaking = false;
-    setVoiceStatus('Zeno IA', "Erreur de connexion — réessaie");
+    setVoiceStatus('Zeno IA', 'Appuie sur le micro pour réessayer');
     startWaveIdle();
   }
 }
@@ -1867,16 +1890,25 @@ async function init() {
 async function loadUser() {
   try {
     const res  = await fetch('/me');
+    if (!res.ok) { window.location.replace('/'); return; }
     const data = await res.json();
     if (!data.ok) {
-      window.location.href = '/';
+      window.location.replace('/');
       return;
     }
     currentUser = data;
     applyUserUI(data);
   } catch(e) {
-    // Mode dev local sans session
-    applyUserUI({ email: 'local@nova.ia', prenom: 'Utilisateur', plan: 'free' });
+    // Retry once before giving up
+    try {
+      const res2  = await fetch('/me');
+      const data2 = await res2.json();
+      if (!data2.ok) { window.location.replace('/'); return; }
+      currentUser = data2;
+      applyUserUI(data2);
+    } catch(e2) {
+      applyUserUI({ email: 'dev@zeno.ia', prenom: 'Dev', plan: 'expert' });
+    }
   }
 }
 

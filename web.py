@@ -6,8 +6,16 @@ import os
 import hashlib
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "zeno-secret-key-change-in-prod-2025")
+# SECRET_KEY doit être fixe sur Render pour que les sessions persistent entre redéploiements
+_secret = os.environ.get("SECRET_KEY")
+if not _secret:
+    # En dev local on utilise une clé fixe
+    _secret = "zeno-ia-secret-key-2025-fixed-do-not-change"
+app.secret_key = _secret
 app.config['PERMANENT_SESSION_LIFETIME'] = __import__('datetime').timedelta(days=30)
+app.config['SESSION_COOKIE_SECURE'] = False   # True si HTTPS uniquement
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax' 
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"
@@ -215,8 +223,8 @@ def landing():
 
 @app.route("/app")
 def app_page():
-    if "email" not in session:
-        return render_template("landing.html")
+    # On sert toujours index.html - le JS vérifie la session via /me
+    # et redirige vers / si pas connecté (évite les redirects brutaux)
     return render_template("index.html")
 
 # AUTH
@@ -247,6 +255,7 @@ def login():
     if not email or not pw:
         return jsonify({"ok": False, "error": "Email et mot de passe requis."})
     if email == VIP_EMAIL.lower():
+        session.permanent = True
         session["email"]  = email
         session["prenom"] = "Arturo"
         session["plan"]   = "expert"

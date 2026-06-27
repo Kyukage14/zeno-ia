@@ -996,24 +996,110 @@ html, body { height: 100%; overflow: hidden; font-family: 'Inter', sans-serif; b
 
 /* ─── MOBILE RESPONSIVE ─── */
 @media (max-width: 768px) {
-  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 200; transform: translateX(0); transition: transform .25s ease; }
-  .sidebar.collapsed { transform: translateX(-100%); width: var(--sidebar-w) !important; opacity: 1 !important; pointer-events: none; }
-  .main { width: 100%; }
-  .chat-header { padding: 12px 14px; }
-  .chat-header-title { font-size: 14px; }
-  .voice-call-btn span { display: none; }
-  .mode-select { font-size: 12px; padding: 6px 10px; }
-  .input-bar { padding: 10px 14px 16px; }
-  .msg-wrap { padding: 0 16px; }
-  #thinking { padding: 0 16px; }
-  #attachment-preview { padding: 0 14px; }
-  .sidebar-toggle { display: flex; }
-  /* Overlay for mobile sidebar */
-  .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 199; }
+  /* Sidebar = drawer qui glisse depuis la gauche */
+  .sidebar {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    z-index: 200;
+    width: 80vw !important;
+    max-width: 300px;
+    transform: translateX(-100%);
+    transition: transform .28s cubic-bezier(.4,0,.2,1);
+    opacity: 1 !important;
+    pointer-events: none;
+    box-shadow: 4px 0 32px rgba(0,0,0,.5);
+  }
+
+  .sidebar.open-mobile {
+    transform: translateX(0);
+    pointer-events: all;
+  }
+
+  /* Le main prend toute la largeur */
+  .main { width: 100%; flex: 1; }
+
+  /* Overlay sombre derrière la sidebar */
+  .sidebar-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.55);
+    z-index: 199;
+    backdrop-filter: blur(2px);
+  }
   .sidebar-overlay.show { display: block; }
-  .voice-modal { padding: 28px 20px; }
-  .voice-zeno-avatar { width: 90px; height: 90px; }
-  .voice-zeno-avatar svg { width: 44px; height: 44px; }
+
+  /* Header */
+  .chat-header { padding: 12px 14px; gap: 8px; }
+  .chat-header-title { font-size: 13px; }
+
+  /* Mode select plus compact */
+  .mode-select { font-size: 12px; padding: 6px 8px; max-width: 95px; }
+
+  /* Cacher le texte du bouton vocal */
+  .voice-call-btn span { display: none; }
+  .voice-call-btn { padding: 8px 10px; }
+
+  /* Input bar */
+  .input-bar { padding: 10px 12px 16px; }
+  .input-wrap { border-radius: 14px; padding: 4px 4px 4px 12px; }
+  .input-wrap input { font-size: 14px; padding: 10px 4px; }
+  .send-btn { width: 38px; height: 38px; border-radius: 10px; }
+  .plus-btn { width: 34px; height: 34px; }
+
+  /* Messages */
+  .msg-wrap { padding: 0 14px; gap: 18px; }
+  #thinking { padding: 0 14px; }
+  #attachment-preview { padding: 0 12px; }
+  .msg-bubble { font-size: 14px; }
+
+  /* Welcome screen */
+  .welcome-name { font-size: 32px; }
+  .welcome-logo svg { width: 56px; height: 56px; }
+  .welcome-tagline { font-size: 14px; }
+
+  /* Voice modal */
+  .voice-modal { padding: 28px 16px; }
+  .voice-zeno-avatar { width: 88px; height: 88px; }
+  .voice-zeno-avatar svg { width: 42px; height: 42px; }
+  .voice-status { font-size: 18px; }
+  .voice-sub { font-size: 13px; }
+
+  /* Settings modal */
+  #settings-overlay > div {
+    flex-direction: column !important;
+    width: 96vw !important;
+    height: 90vh !important;
+    max-height: 90vh !important;
+  }
+
+  #settings-overlay > div > div:first-child {
+    width: 100% !important;
+    flex-direction: row !important;
+    overflow-x: auto;
+    padding: 12px 0 0 !important;
+    border-right: none !important;
+    border-bottom: 1px solid #1e2240;
+    flex-shrink: 0;
+  }
+
+  .stab {
+    border-left: none !important;
+    border-bottom: 3px solid transparent;
+    padding: 8px 14px !important;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+
+  .stab.active {
+    border-bottom-color: #6c63ff !important;
+    border-left-color: transparent !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .chat-header { gap: 6px; }
+  .mode-select { max-width: 78px; font-size: 11px; padding: 5px 6px; }
+  .chat-header-title { font-size: 12px; }
 }
 
 @media (max-width: 480px) {
@@ -1118,7 +1204,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Inter', sans-serif; b
   <div class="main">
 
     <div class="chat-header">
-      <button class="sidebar-toggle" onclick="toggleSidebar()" title="Ouvrir/fermer le panneau">
+      <button class="sidebar-toggle" id="sidebar-toggle-btn" onclick="toggleSidebar()" title="Ouvrir/fermer le panneau">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <line x1="3" y1="6"  x2="21" y2="6"/>
           <line x1="3" y1="12" x2="21" y2="12"/>
@@ -1503,11 +1589,43 @@ function setVoiceStatus(title, sub) {
 const _origToggle = window.toggleSidebar;
 window.toggleSidebar = function() {
   sidebarOpen = !sidebarOpen;
-  document.getElementById('sidebar').classList.toggle('collapsed', !sidebarOpen);
-  // Mobile overlay
+  const sidebar = document.getElementById('sidebar');
   const overlay = document.getElementById('sidebar-overlay');
-  if (overlay) overlay.classList.toggle('show', sidebarOpen && window.innerWidth <= 768);
+  if (window.innerWidth <= 768) {
+    // Mobile: drawer mode
+    sidebar.classList.toggle('open-mobile', sidebarOpen);
+    if (overlay) overlay.classList.toggle('show', sidebarOpen);
+  } else {
+    // Desktop: collapse mode
+    sidebar.classList.toggle('collapsed', !sidebarOpen);
+  }
 };
+
+// Close sidebar when clicking a conv on mobile
+document.addEventListener('click', function(e) {
+  if (window.innerWidth <= 768 && sidebarOpen) {
+    const sidebar = document.getElementById('sidebar');
+    const toggle  = document.getElementById('sidebar-toggle-btn');
+    if (sidebar && !sidebar.contains(e.target) && e.target !== toggle) {
+      sidebarOpen = false;
+      sidebar.classList.remove('open-mobile');
+      const overlay = document.getElementById('sidebar-overlay');
+      if (overlay) overlay.classList.remove('show');
+    }
+  }
+});
+
+// Handle resize
+window.addEventListener('resize', function() {
+  const sidebar = document.getElementById('sidebar');
+  if (window.innerWidth > 768) {
+    sidebar.classList.remove('open-mobile');
+    if (!sidebarOpen) sidebar.classList.add('collapsed');
+    else sidebar.classList.remove('collapsed');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (overlay) overlay.classList.remove('show');
+  }
+});
 
 // Close sidebar on mobile when clicking a conversation
 const _origOpenChat = window.openChat;
@@ -1734,6 +1852,13 @@ async function init() {
   const savedFont  = localStorage.getItem('zeno-fontsize');
   if (savedTheme) setTheme(savedTheme);
   if (savedFont)  setFontSize(savedFont);
+
+  // On mobile: sidebar fermée par défaut
+  if (window.innerWidth <= 768) {
+    sidebarOpen = false;
+    document.getElementById('sidebar').classList.add('collapsed');
+  }
+
   await loadUser();
   await loadConvs();
 }
@@ -1846,6 +1971,14 @@ async function openChat(id) {
   document.getElementById('chat-header-title').textContent = conv ? conv.title : 'Conversation';
   data.messages.forEach(m => addMsg(m.role, m.text));
   renderConvs(allConvs);
+
+  // Ferme la sidebar sur mobile après avoir ouvert une conv
+  if (window.innerWidth <= 768 && sidebarOpen) {
+    sidebarOpen = false;
+    document.getElementById('sidebar').classList.remove('open-mobile');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (overlay) overlay.classList.remove('show');
+  }
 }
 
 /* ─── SEND (STREAMING) ─── */

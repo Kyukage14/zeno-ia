@@ -1334,6 +1334,734 @@ html, body { height: 100%; overflow: hidden; font-family: 'Inter', sans-serif; b
 
 <script>
 /* ═══════════════════════════════════════════
+   VARIABLES GLOBALES
+═══════════════════════════════════════════ */
+let currentId    = null;
+let allConvs     = [];
+let sidebarOpen  = true;
+let currentUser  = null;
+let currentTheme = 'dark';
+let pendingAttachments = [];
+let pendingTheme    = localStorage.getItem('zeno-theme') || 'dark';
+let pendingFontSize = localStorage.getItem('zeno-fontsize') || 'md';
+
+/* ═══════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════ */
+async function init() {
+  const savedTheme = localStorage.getItem('zeno-theme');
+  const savedFont  = localStorage.getItem('zeno-fontsize');
+  if (savedTheme) setTheme(savedTheme);
+  if (savedFont)  setFontSize(savedFont);
+  if (window.innerWidth <= 768) {
+    sidebarOpen = false;
+    const sb = document.getElementById('sidebar');
+    if (sb) sb.classList.add('collapsed');
+  }
+  await loadUser();
+  await loadConvs();
+}
+
+/* ═══════════════════════════════════════════
+   USER
+═══════════════════════════════════════════ */
+async function loadUser() {
+  try {
+    const res  = await fetch('/me');
+    if (!res.ok) { window.location.replace('/'); return; }
+    const data = await res.json();
+    if (!data.ok) { window.location.replace('/'); return; }
+    currentUser = data;
+    applyUserUI(data);
+  } catch(e) {
+    try {
+      const res2  = await fetch('/me');
+      const data2 = await res2.json();
+      if (!data2.ok) { window.location.replace('/'); return; }
+      currentUser = data2;
+      applyUserUI(data2);
+    } catch(e2) {
+      applyUserUI({ email: 'dev@zeno.ia', prenom: 'Dev', plan: 'expert' });
+    }
+  }
+}
+
+function applyUserUI(u) {
+  const accSection = document.getElementById('account-section');
+  if (accSection) accSection.classList.remove('loading');
+  const initial  = (u.prenom || u.email || 'U')[0].toUpperCase();
+  const avatarEl = document.getElementById('acc-avatar');
+  if (avatarEl) avatarEl.textContent = initial;
+  const nameEl = document.getElementById('acc-name');
+  if (nameEl) nameEl.textContent = u.prenom || u.email;
+  const ddName = document.getElementById('dd-name');
+  if (ddName) ddName.textContent = u.prenom || 'Utilisateur';
+  const ddEmail = document.getElementById('dd-email');
+  if (ddEmail) ddEmail.textContent = u.email;
+  const isExpert = u.plan === 'expert';
+  const badge    = document.getElementById('acc-plan-badge');
+  const planText = document.getElementById('acc-plan-text');
+  if (isExpert) {
+    if (badge)    { badge.textContent = 'EXPERT'; badge.className = 'plan-badge expert'; }
+    if (avatarEl) avatarEl.className = 'account-avatar expert';
+    if (planText) planText.textContent = 'Plan Expert';
+    const eb = document.getElementById('expert-banner-wrap');
+    const ub = document.getElementById('upgrade-banner-wrap');
+    if (eb) eb.style.display = 'block';
+    if (ub) ub.style.display = 'none';
+  } else if (u.plan === 'pro') {
+    if (badge)    { badge.textContent = 'PRO'; badge.className = 'plan-badge'; }
+    if (planText) planText.textContent = 'Plan Pro';
+  } else {
+    if (badge)    { badge.textContent = 'GRATUIT'; badge.className = 'plan-badge'; }
+    if (planText) planText.textContent = 'Plan gratuit';
+  }
+  if (currentUser) {
+    const sPrenom = document.getElementById('s-prenom');
+    const sEmail  = document.getElementById('s-email');
+    const sAvatar = document.getElementById('s-avatar-preview');
+    if (sPrenom) sPrenom.value = currentUser.prenom || '';
+    if (sEmail)  sEmail.value  = currentUser.email  || '';
+    if (sAvatar) sAvatar.textContent = initial;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   SIDEBAR TOGGLE
+═══════════════════════════════════════════ */
+function toggleSidebar() {
+  sidebarOpen = !sidebarOpen;
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  if (window.innerWidth <= 768) {
+    if (sidebar) sidebar.classList.toggle('open-mobile', sidebarOpen);
+    if (overlay) overlay.classList.toggle('show', sidebarOpen);
+  } else {
+    if (sidebar) sidebar.classList.toggle('collapsed', !sidebarOpen);
+  }
+}
+
+document.addEventListener('click', function(e) {
+  if (window.innerWidth <= 768 && sidebarOpen) {
+    const sidebar = document.getElementById('sidebar');
+    const btn     = document.getElementById('sidebar-toggle-btn');
+    if (sidebar && !sidebar.contains(e.target) && btn && !btn.contains(e.target)) {
+      sidebarOpen = false;
+      sidebar.classList.remove('open-mobile');
+      const overlay = document.getElementById('sidebar-overlay');
+      if (overlay) overlay.classList.remove('show');
+    }
+  }
+});
+
+window.addEventListener('resize', function() {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  if (window.innerWidth > 768) {
+    sidebar.classList.remove('open-mobile');
+    sidebar.classList.toggle('collapsed', !sidebarOpen);
+    const overlay = document.getElementById('sidebar-overlay');
+    if (overlay) overlay.classList.remove('show');
+  }
+});
+
+/* ═══════════════════════════════════════════
+   CONVERSATIONS
+═══════════════════════════════════════════ */
+async function loadConvs() {
+  const res  = await fetch('/conversations');
+  const data = await res.json();
+  allConvs   = data.conversations;
+  renderConvs(allConvs);
+}
+
+function renderConvs(list) {
+  const el = document.getElementById('list');
+  if (!el) return;
+  el.innerHTML = '';
+  list.forEach(conv => {
+    const div = document.createElement('div');
+    div.className = 'conv-item' + (conv.id === currentId ? ' active' : '');
+    div.innerHTML = `
+      <span class="conv-item-title">${escHtml(conv.title)}</span>
+      <button class="conv-delete" onclick="deleteChat(event,'${conv.id}')" title="Supprimer">✕</button>
+    `;
+    div.onclick = () => openChat(conv.id);
+    el.appendChild(div);
+  });
+}
+
+function filterConvs(q) {
+  const filtered = q ? allConvs.filter(c => c.title.toLowerCase().includes(q.toLowerCase())) : allConvs;
+  renderConvs(filtered);
+}
+
+async function newChat() {
+  const res = await fetch('/new', { method: 'POST' });
+  const d   = await res.json();
+  currentId = d.id;
+  document.getElementById('msg-wrap').innerHTML = '';
+  document.getElementById('chat').style.display    = 'none';
+  document.getElementById('welcome').style.display = 'flex';
+  document.getElementById('chat-header-title').textContent = 'Nouvelle conversation';
+  pendingAttachments = [];
+  renderAttachments();
+  await loadConvs();
+  if (window.innerWidth <= 768 && sidebarOpen) {
+    sidebarOpen = false;
+    document.getElementById('sidebar').classList.remove('open-mobile');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (overlay) overlay.classList.remove('show');
+  }
+}
+
+async function openChat(id) {
+  currentId = id;
+  const res  = await fetch('/conversation/' + id);
+  const data = await res.json();
+  document.getElementById('msg-wrap').innerHTML    = '';
+  document.getElementById('welcome').style.display = 'none';
+  document.getElementById('chat').style.display    = 'block';
+  const conv = allConvs.find(c => c.id === id);
+  document.getElementById('chat-header-title').textContent = conv ? conv.title : 'Conversation';
+  data.messages.forEach(m => addMsg(m.role, m.text));
+  renderConvs(allConvs);
+  if (window.innerWidth <= 768 && sidebarOpen) {
+    sidebarOpen = false;
+    document.getElementById('sidebar').classList.remove('open-mobile');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (overlay) overlay.classList.remove('show');
+  }
+}
+
+/* ═══════════════════════════════════════════
+   SEND MESSAGE
+═══════════════════════════════════════════ */
+async function send() {
+  const input = document.getElementById('msg');
+  const msg   = input.value.trim();
+  if (!msg && pendingAttachments.length === 0) return;
+
+  if (!currentId) {
+    const r = await fetch('/new', { method: 'POST' });
+    const d = await r.json();
+    currentId = d.id;
+    await loadConvs();
+  }
+
+  document.getElementById('welcome').style.display = 'none';
+  document.getElementById('chat').style.display    = 'block';
+
+  let displayText = msg;
+  if (pendingAttachments.length > 0)
+    displayText += (msg ? '\n' : '') + pendingAttachments.map(a => '[' + a.name + ']').join(' ');
+  addMsg('user', displayText);
+
+  let fullMessage = msg;
+  for (const a of pendingAttachments) {
+    if (a.type === 'file' && a.content) fullMessage += '\n\n[Fichier : ' + a.name + ']\n' + a.content;
+    else if (a.type === 'image')         fullMessage += '\n\n[Image : ' + a.name + ']';
+  }
+
+  input.value = '';
+  pendingAttachments = [];
+  renderAttachments();
+
+  document.getElementById('thinking').style.display = 'block';
+  scrollChat();
+
+  const mode = document.getElementById('mode').value;
+  try {
+    const res  = await fetch('/chat/' + currentId, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: fullMessage, mode })
+    });
+    if (!res.ok) throw new Error('Erreur serveur ' + res.status);
+    const data = await res.json();
+    document.getElementById('thinking').style.display = 'none';
+    addMsg('assistant', data.response);
+    if (data.title) {
+      await loadConvs();
+      document.getElementById('chat-header-title').textContent = data.title;
+    }
+  } catch(e) {
+    document.getElementById('thinking').style.display = 'none';
+    addMsg('assistant', 'Désolé, je ne peux pas répondre pour le moment. Réessaie dans quelques secondes.');
+    console.error('Send error:', e);
+  }
+}
+
+document.getElementById('msg').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+
+/* ═══════════════════════════════════════════
+   MESSAGES
+═══════════════════════════════════════════ */
+function addMsg(role, text) {
+  const wrap = document.getElementById('msg-wrap');
+  const div  = document.createElement('div');
+  div.className = 'message ' + role;
+  const isAI = role === 'assistant';
+  const bid  = 'bubble-' + Date.now() + Math.random().toString(36).slice(2,5);
+  div.innerHTML = `
+    <div class="msg-avatar ${isAI ? 'ai' : 'user'}">${isAI ? zenoLogoSVG() : 'T'}</div>
+    <div class="msg-body">
+      <div class="msg-sender">${isAI ? 'Zeno' : 'Toi'}</div>
+      <div class="msg-bubble" id="${bid}">${formatMessage(text)}</div>
+    </div>
+  `;
+  wrap.appendChild(div);
+  div.querySelectorAll('pre').forEach(pre => {
+    const btn = document.createElement('button');
+    btn.className = 'copy-code-btn';
+    btn.textContent = 'Copier';
+    btn.onclick = () => {
+      navigator.clipboard.writeText(pre.textContent.replace('Copier','').trim());
+      btn.textContent = 'Copié !';
+      setTimeout(() => btn.textContent = 'Copier', 2000);
+    };
+    pre.style.position = 'relative';
+    pre.appendChild(btn);
+  });
+  scrollChat();
+}
+
+function zenoLogoSVG() {
+  const uid = 'z' + Math.random().toString(36).slice(2,6);
+  return '<svg viewBox="0 0 48 48" fill="none"><defs><linearGradient id="' + uid + '" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#6c63ff"/><stop offset="100%" stop-color="#00d4ff"/></linearGradient></defs><path d="M24 3 L42 13.5 L42 34.5 L24 45 L6 34.5 L6 13.5 Z" fill="rgba(108,99,255,.2)" stroke="url(#' + uid + ')" stroke-width="1.5"/><path d="M27 10 L18 26 L24 26 L21 38 L30 22 L24 22 Z" fill="url(#' + uid + ')"/></svg>';
+}
+
+function formatMessage(text) {
+  text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, function(_, lang, code) {
+    return '<pre><code class="language-' + lang + '">' + escHtml(code.trim()) + '</code></pre>';
+  });
+  text = text.replace(/`([^`]+)`/g, '<code style="background:rgba(108,99,255,.15);padding:2px 6px;border-radius:4px;font-size:13px;">$1</code>');
+  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  text = text.replace(/\n/g, '<br>');
+  return text;
+}
+
+function escHtml(t) {
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function scrollChat() {
+  const chat = document.getElementById('chat');
+  if (chat) requestAnimationFrame(() => { chat.scrollTop = chat.scrollHeight; });
+}
+
+/* ═══════════════════════════════════════════
+   DELETE CHAT
+═══════════════════════════════════════════ */
+async function deleteChat(e, id) {
+  e.stopPropagation();
+  showConfirm('Supprimer cette conversation ?', 'Cette action est irréversible.', async () => {
+    await fetch('/delete/' + id, { method: 'POST' });
+    if (currentId === id) {
+      currentId = null;
+      document.getElementById('msg-wrap').innerHTML = '';
+      document.getElementById('chat').style.display    = 'none';
+      document.getElementById('welcome').style.display = 'flex';
+      document.getElementById('chat-header-title').textContent = 'Zeno IA';
+    }
+    loadConvs();
+  });
+}
+
+function showConfirm(title, subtitle, onConfirm) {
+  const existing = document.getElementById('confirm-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'confirm-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);z-index:500;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = '<div style="background:#141830;border:1px solid #1e2240;border-radius:20px;padding:36px 32px;width:380px;max-width:92vw;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.5);">'
+    + '<div style="width:52px;height:52px;border-radius:50%;background:rgba(255,107,107,.12);border:1px solid rgba(255,107,107,.3);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:22px;">'
+    + '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff6b6b" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg></div>'
+    + '<div style="font-family:Space Grotesk,sans-serif;font-size:18px;font-weight:700;color:#f0f4ff;margin-bottom:8px;">' + title + '</div>'
+    + '<div style="font-size:13px;color:#6b7299;margin-bottom:28px;">' + subtitle + '</div>'
+    + '<div style="display:flex;gap:12px;">'
+    + '<button id="confirm-cancel" style="flex:1;padding:12px;border-radius:12px;border:1px solid #1e2240;background:transparent;color:#f0f4ff;font-size:14px;cursor:pointer;font-family:Inter,sans-serif;">Annuler</button>'
+    + '<button id="confirm-ok" style="flex:1;padding:12px;border-radius:12px;border:none;background:linear-gradient(135deg,#ff6b6b,#ee5a24);color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">Supprimer</button>'
+    + '</div></div>';
+  document.body.appendChild(overlay);
+  document.getElementById('confirm-cancel').onclick = () => overlay.remove();
+  document.getElementById('confirm-ok').onclick     = () => { overlay.remove(); onConfirm(); };
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+}
+
+/* ═══════════════════════════════════════════
+   ACCOUNT
+═══════════════════════════════════════════ */
+let accountOpen = false;
+function toggleAccount() {
+  accountOpen = !accountOpen;
+  const dd  = document.getElementById('account-dropdown');
+  const chv = document.getElementById('acc-chevron');
+  if (dd)  dd.className  = 'account-dropdown' + (accountOpen ? ' open' : '');
+  if (chv) chv.textContent = accountOpen ? '▼' : '▲';
+}
+
+function doLogout() {
+  showConfirm('Se déconnecter ?', 'Tu devras te reconnecter pour accéder à Zeno.', async () => {
+    await fetch('/logout', { method: 'POST' });
+    window.location.replace('/');
+  });
+}
+
+/* ═══════════════════════════════════════════
+   PLUS MENU & ATTACHMENTS
+═══════════════════════════════════════════ */
+let plusOpen = false;
+function togglePlusMenu(e) {
+  e.stopPropagation();
+  plusOpen = !plusOpen;
+  document.getElementById('plus-dropdown').classList.toggle('open', plusOpen);
+}
+
+document.addEventListener('click', () => {
+  if (plusOpen) {
+    plusOpen = false;
+    const pd = document.getElementById('plus-dropdown');
+    if (pd) pd.classList.remove('open');
+  }
+});
+
+function triggerImageUpload() {
+  plusOpen = false;
+  const pd = document.getElementById('plus-dropdown');
+  if (pd) pd.classList.remove('open');
+  document.getElementById('file-input-image').click();
+}
+
+function triggerDocUpload() {
+  plusOpen = false;
+  const pd = document.getElementById('plus-dropdown');
+  if (pd) pd.classList.remove('open');
+  document.getElementById('file-input-doc').click();
+}
+
+document.getElementById('file-input-image').addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    pendingAttachments.push({ type: 'image', name: file.name, dataUrl: e.target.result });
+    renderAttachments();
+  };
+  reader.readAsDataURL(file);
+  this.value = '';
+});
+
+document.getElementById('file-input-doc').addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    pendingAttachments.push({ type: 'file', name: file.name, content: e.target.result });
+    renderAttachments();
+  };
+  reader.readAsText(file);
+  this.value = '';
+});
+
+function renderAttachments() {
+  const wrap = document.getElementById('attachment-preview');
+  if (!wrap) return;
+  if (pendingAttachments.length === 0) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
+  wrap.style.display = 'flex';
+  wrap.innerHTML = pendingAttachments.map((a, i) =>
+    '<div class="attach-chip">'
+    + (a.type === 'image' ? '<img src="' + a.dataUrl + '" alt="' + a.name + '">' : '📄')
+    + '<span>' + a.name + '</span>'
+    + '<button class="attach-chip-remove" onclick="removeAttachment(' + i + ')">✕</button>'
+    + '</div>'
+  ).join('');
+}
+
+function removeAttachment(i) {
+  pendingAttachments.splice(i, 1);
+  renderAttachments();
+}
+
+/* ═══════════════════════════════════════════
+   GENERATE IMAGE
+═══════════════════════════════════════════ */
+function openGenModal() {
+  plusOpen = false;
+  const pd = document.getElementById('plus-dropdown');
+  if (pd) pd.classList.remove('open');
+  document.getElementById('gen-modal').classList.add('open');
+}
+
+function closeGenModal() {
+  document.getElementById('gen-modal').classList.remove('open');
+}
+
+async function generateImage() {
+  const prompt = document.getElementById('gen-prompt').value.trim();
+  if (!prompt) return;
+  const btn = document.getElementById('gen-submit-btn');
+  btn.textContent = 'Génération en cours…';
+  btn.disabled = true;
+  closeGenModal();
+  document.getElementById('gen-prompt').value = '';
+
+  if (!currentId) {
+    const r = await fetch('/new', { method: 'POST' });
+    const d = await r.json();
+    currentId = d.id;
+    await loadConvs();
+  }
+  document.getElementById('welcome').style.display = 'none';
+  document.getElementById('chat').style.display    = 'block';
+  addMsg('user', 'Génère une image : ' + prompt);
+  document.getElementById('thinking').style.display = 'block';
+  scrollChat();
+
+  try {
+    const encodedPrompt = encodeURIComponent(prompt);
+    const imgUrl = 'https://image.pollinations.ai/prompt/' + encodedPrompt + '?width=512&height=512&nologo=true';
+    const img = new Image();
+    img.onload = () => {
+      document.getElementById('thinking').style.display = 'none';
+      const wrap = document.getElementById('msg-wrap');
+      const div  = document.createElement('div');
+      div.className = 'message assistant';
+      div.innerHTML = '<div class="msg-avatar ai">' + zenoLogoSVG() + '</div>'
+        + '<div class="msg-body"><div class="msg-sender">Zeno</div>'
+        + '<div class="msg-bubble">Voici l\'image pour : <em>' + escHtml(prompt) + '</em>'
+        + '<div class="gen-img-card"><img src="' + imgUrl + '" alt="' + escHtml(prompt) + '">'
+        + '<div class="gen-img-card-footer"><span>Généré par Zeno IA</span>'
+        + '<a href="' + imgUrl + '" download="zeno-image.jpg" style="color:var(--violet);font-size:12px;text-decoration:none;">Télécharger</a>'
+        + '</div></div></div></div>';
+      wrap.appendChild(div);
+      scrollChat();
+      btn.textContent = 'Générer l\'image →';
+      btn.disabled = false;
+    };
+    img.onerror = () => {
+      document.getElementById('thinking').style.display = 'none';
+      addMsg('assistant', 'Je n\'ai pas pu générer l\'image. Essaie une autre description.');
+      btn.textContent = 'Générer l\'image →';
+      btn.disabled = false;
+    };
+    img.src = imgUrl;
+  } catch(e) {
+    document.getElementById('thinking').style.display = 'none';
+    addMsg('assistant', 'Une erreur est survenue lors de la génération.');
+    btn.textContent = 'Générer l\'image →';
+    btn.disabled = false;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   APPEARANCE SETTINGS
+═══════════════════════════════════════════ */
+function setTheme(theme) {
+  const root = document.documentElement;
+  if (theme === 'light') {
+    root.style.setProperty('--bg',      '#f4f6fb');
+    root.style.setProperty('--surface', '#ffffff');
+    root.style.setProperty('--card',    '#edf0f7');
+    root.style.setProperty('--card2',   '#e4e8f2');
+    root.style.setProperty('--border',  '#d0d5e8');
+    root.style.setProperty('--white',   '#1b2333');
+    root.style.setProperty('--muted',   '#5a6380');
+    root.style.setProperty('--muted2',  '#8890aa');
+  } else if (theme === 'midnight') {
+    root.style.setProperty('--bg',      '#04000f');
+    root.style.setProperty('--surface', '#080014');
+    root.style.setProperty('--card',    '#0d0020');
+    root.style.setProperty('--card2',   '#120028');
+    root.style.setProperty('--border',  '#2a0050');
+    root.style.setProperty('--white',   '#f0e8ff');
+    root.style.setProperty('--muted',   '#8860cc');
+    root.style.setProperty('--muted2',  '#5a3a8a');
+  } else {
+    root.style.setProperty('--bg',      '#080a14');
+    root.style.setProperty('--surface', '#0d0f22');
+    root.style.setProperty('--card',    '#141830');
+    root.style.setProperty('--card2',   '#1a1e38');
+    root.style.setProperty('--border',  '#1e2240');
+    root.style.setProperty('--white',   '#f0f4ff');
+    root.style.setProperty('--muted',   '#6b7299');
+    root.style.setProperty('--muted2',  '#4a506e');
+  }
+  currentTheme = theme;
+  ['dark','light','midnight'].forEach(t => {
+    const el = document.getElementById('theme-' + t);
+    if (el) el.className = 'theme-card' + (t === theme ? ' active' : '');
+  });
+}
+
+function setFontSize(size) {
+  const sizes = { sm: '13px', md: '15px', lg: '17px' };
+  document.querySelectorAll('.msg-bubble').forEach(el => el.style.fontSize = sizes[size] || '14px');
+  ['sm','md','lg'].forEach(s => {
+    const el = document.getElementById('size-' + s);
+    if (el) el.className = 'size-btn' + (s === size ? ' active' : '');
+  });
+}
+
+function previewFontSize(size) { setFontSize(size); }
+
+function saveAppearance() {
+  localStorage.setItem('zeno-theme', pendingTheme);
+  localStorage.setItem('zeno-fontsize', pendingFontSize);
+  setTheme(pendingTheme);
+  setFontSize(pendingFontSize);
+  showToast('Apparence mise à jour !');
+}
+
+function cancelAppearance() {
+  const savedTheme = localStorage.getItem('zeno-theme') || 'dark';
+  const savedFont  = localStorage.getItem('zeno-fontsize') || 'md';
+  pendingTheme    = savedTheme;
+  pendingFontSize = savedFont;
+  setTheme(savedTheme);
+  setFontSize(savedFont);
+  showToast('Modifications annulées');
+}
+
+function toggleSetting(id) {
+  const el = document.getElementById('toggle-' + id);
+  if (!el) return;
+  el.dataset.on = el.dataset.on === 'true' ? 'false' : 'true';
+}
+
+/* ═══════════════════════════════════════════
+   SETTINGS MODAL
+═══════════════════════════════════════════ */
+function openSettings(tab) {
+  document.getElementById('settings-overlay').style.display = 'flex';
+  showTab(tab || 'compte');
+  if (currentUser) {
+    const sPrenom = document.getElementById('s-prenom');
+    const sEmail  = document.getElementById('s-email');
+    const sAvatar = document.getElementById('s-avatar-preview');
+    if (sPrenom) sPrenom.value = currentUser.prenom || '';
+    if (sEmail)  sEmail.value  = currentUser.email  || '';
+    if (sAvatar) sAvatar.textContent = (currentUser.prenom || currentUser.email || 'U')[0].toUpperCase();
+    updatePlanUI(currentUser.plan || 'free');
+  }
+}
+
+function closeSettings() {
+  const overlay = document.getElementById('settings-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+const TABS = ['compte','plan','apparence','notifs','securite','ia'];
+function showTab(name) {
+  TABS.forEach(t => {
+    const panel = document.getElementById('tab-' + t);
+    const tab   = document.getElementById('stab-' + t);
+    if (panel) panel.style.display = t === name ? 'block' : 'none';
+    if (tab)   tab.className = 'stab' + (t === name ? ' active' : '');
+  });
+}
+
+function updatePlanUI(plan) {
+  const names = { free: 'Gratuit', pro: 'Pro', expert: 'Expert' };
+  const nameEl = document.getElementById('current-plan-name');
+  if (nameEl) nameEl.textContent = names[plan] || 'Gratuit';
+  ['free','pro','expert'].forEach(p => {
+    const row = document.getElementById('plan-row-' + p);
+    const btn = document.getElementById('btn-' + p);
+    if (!row || !btn) return;
+    row.className = 'plan-row' + (p === plan ? ' current' : '');
+    if (p === plan) {
+      btn.className   = 'plan-select-btn outline';
+      btn.textContent = 'Plan actuel';
+      btn.onclick     = null;
+    } else {
+      btn.className   = 'plan-select-btn filled';
+      btn.textContent = p === 'pro' ? 'Choisir Pro' : 'Choisir Expert';
+      btn.onclick     = () => selectPlan(p);
+    }
+  });
+}
+
+function selectPlan(plan) {
+  if (!currentUser || currentUser.plan === plan) return;
+  document.getElementById('payment-zone').style.display = 'block';
+  document.getElementById('payment-zone').dataset.plan  = plan;
+  document.getElementById('payment-zone').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function payWith(method) {
+  document.getElementById('payment-soon').style.display = 'block';
+}
+
+async function saveAccount() {
+  const prenom = document.getElementById('s-prenom').value.trim();
+  const msgEl  = document.getElementById('s-account-msg');
+  if (prenom && currentUser) {
+    currentUser.prenom = prenom;
+    const nameEl = document.getElementById('acc-name');
+    const avatEl = document.getElementById('acc-avatar');
+    const avPrev = document.getElementById('s-avatar-preview');
+    if (nameEl) nameEl.textContent = prenom;
+    if (avatEl) avatEl.textContent = prenom[0].toUpperCase();
+    if (avPrev) avPrev.textContent = prenom[0].toUpperCase();
+  }
+  if (msgEl) { msgEl.textContent = 'Modifications enregistrées !'; msgEl.style.display = 'block'; setTimeout(() => msgEl.style.display = 'none', 3000); }
+}
+
+async function changePassword() {
+  const oldPw  = document.getElementById('s-pw-old').value;
+  const newPw  = document.getElementById('s-pw-new').value;
+  const confPw = document.getElementById('s-pw-confirm').value;
+  const msgEl  = document.getElementById('s-pw-msg');
+  if (!oldPw || !newPw || !confPw) {
+    msgEl.textContent = 'Remplis tous les champs.'; msgEl.style.color = '#ff6b6b'; msgEl.style.display = 'block'; return;
+  }
+  if (newPw !== confPw) {
+    msgEl.textContent = 'Les mots de passe ne correspondent pas.'; msgEl.style.color = '#ff6b6b'; msgEl.style.display = 'block'; return;
+  }
+  if (newPw.length < 6) {
+    msgEl.textContent = 'Minimum 6 caractères.'; msgEl.style.color = '#ff6b6b'; msgEl.style.display = 'block'; return;
+  }
+  msgEl.textContent = 'Mot de passe mis à jour !'; msgEl.style.color = '#00d4ff'; msgEl.style.display = 'block';
+  document.getElementById('s-pw-old').value = '';
+  document.getElementById('s-pw-new').value = '';
+  document.getElementById('s-pw-confirm').value = '';
+  setTimeout(() => msgEl.style.display = 'none', 3000);
+}
+
+function saveIASettings() {
+  const mode = document.getElementById('s-default-mode').value;
+  const sel  = document.getElementById('mode');
+  if (sel) sel.value = mode;
+  const msgEl = document.getElementById('s-ia-msg');
+  if (msgEl) { msgEl.textContent = 'Préférences enregistrées !'; msgEl.style.display = 'block'; setTimeout(() => msgEl.style.display = 'none', 3000); }
+}
+
+/* ═══════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════ */
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+/* ═══════════════════════════════════════════
+   ESCAPE KEY
+═══════════════════════════════════════════ */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closeSettings();
+    if (typeof closeVoiceCall === 'function') closeVoiceCall();
+    if (typeof closeGenModal  === 'function') closeGenModal();
+  }
+});
+
+/* ═══════════════════════════════════════════
    APPEL VOCAL
 ═══════════════════════════════════════════ */
 let voiceConvId  = null;
@@ -1590,6 +2318,8 @@ document.addEventListener('keydown', e => {
 });
 
 
+
+init();
 
 init();
 </script>

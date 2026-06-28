@@ -13,9 +13,10 @@ if not _secret:
     _secret = "zeno-ia-secret-key-2025-fixed-do-not-change"
 app.secret_key = _secret
 app.config['PERMANENT_SESSION_LIFETIME'] = __import__('datetime').timedelta(days=30)
-app.config['SESSION_COOKIE_SECURE'] = False   # True si HTTPS uniquement
+app.config['SESSION_COOKIE_SECURE'] = True    # HTTPS sur Render
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax' 
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_NAME'] = 'zeno_session'
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"

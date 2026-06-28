@@ -209,6 +209,8 @@ html, body { height: 100%; overflow: hidden; font-family: 'Inter', sans-serif; b
 .plan-badge.expert { background: rgba(255,210,0,.15); border-color: rgba(255,210,0,.4); color: #ffd200; }
 
 .account-expand { color: var(--muted); font-size: 12px; }
+.account-section.loading { opacity: 0; pointer-events: none; }
+.account-section { transition: opacity .3s; }
 
 .account-dropdown { display: none; margin-top: 10px; background: var(--card2); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
 .account-dropdown.open { display: block; }
@@ -1157,13 +1159,13 @@ html, body { height: 100%; overflow: hidden; font-family: 'Inter', sans-serif; b
     <div class="conv-list" id="list"></div>
 
     <!-- ACCOUNT SECTION -->
-    <div class="account-section">
+    <div class="account-section loading" id="account-section">
       <div class="account-header" onclick="toggleAccount()">
         <div class="account-avatar" id="acc-avatar">U</div>
         <div class="account-info">
-          <div class="account-name" id="acc-name">Chargement…</div>
+          <div class="account-name" id="acc-name"></div>
           <div class="account-plan">
-            <span class="plan-badge" id="acc-plan-badge">—</span>
+            <span class="plan-badge" id="acc-plan-badge"></span>
             <span id="acc-plan-text"></span>
           </div>
         </div>
@@ -1913,6 +1915,9 @@ async function loadUser() {
 }
 
 function applyUserUI(u) {
+  // Remove loading state
+  const accSection = document.getElementById('account-section');
+  if (accSection) accSection.classList.remove('loading');
   const initial = (u.prenom || u.email || 'U')[0].toUpperCase();
   const avatarEl = document.getElementById('acc-avatar');
   avatarEl.textContent = initial;

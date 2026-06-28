@@ -352,50 +352,41 @@ def chat(cid):
     message  = request.json.get("message", "")
     mode     = request.json.get("mode", "balanced")
     is_voice = request.json.get("voice", False)
+
     if cid not in data:
         data[cid] = {"title": "Nouvelle conversation", "messages": []}
+
     conv = data[cid]
     conv["messages"].append({"role": "user", "text": message})
+
     if is_voice:
-        mode_instr = "MODE VOCAL : Réponds naturellement et brièvement en 2-3 phrases max. Pas de markdown, pas de listes, juste une vraie conversation."
+        mode_instr = "MODE VOCAL : Réponds naturellement en 2-3 phrases max. Pas de markdown, pas de listes."
     elif mode == "fast":
-        mode_instr = "IMPORTANT : Réponds de façon COURTE et DIRECTE. Maximum 3-4 phrases ou un bloc de code concis."
+        mode_instr = "Réponds de façon COURTE et DIRECTE. Maximum 3-4 phrases ou un bloc de code concis."
     elif mode == "deep":
-        mode_instr = "IMPORTANT : Réponse TRÈS DÉTAILLÉE. Analyse en profondeur, exemples multiples, étape par étape."
+        mode_instr = "Réponse TRÈS DÉTAILLÉE. Analyse en profondeur, exemples multiples, étape par étape."
     else:
         mode_instr = "Réponse complète et claire, sans longueur inutile."
+
     messages = [{"role": "system", "content": ZENO_SYSTEM + f"\n\n{mode_instr}"}]
     for m in conv["messages"][:-1]:
         messages.append({"role": "user" if m["role"] == "user" else "assistant", "content": m["text"]})
     messages.append({"role": "user", "content": message})
-    # Voice: non-streaming
-    if is_voice:
+
+    # Appel IA simple (non-streaming) — plus fiable sur Render plan gratuit
+    try:
         reply = call_ai_simple(messages, mode)
-        conv["messages"].append({"role": "assistant", "text": reply})
-        if len(conv["messages"]) == 2:
-            conv["title"] = generate_title(message, reply)
-        save_data(data)
-        return jsonify({"response": reply, "title": conv["title"]})
-    # Text: streaming
-    def generate():
-        full_reply = ""
-        try:
-            streamer = stream_groq(messages, mode) if GROQ_API_KEY else stream_ollama(messages, mode)
-            for token, is_done in streamer:
-                if not is_done:
-                    yield f"data: {json.dumps({'token': token})}\n\n"
-                else:
-                    full_reply = token
-            conv["messages"].append({"role": "assistant", "text": full_reply})
-            if len(conv["messages"]) == 2:
-                conv["title"] = generate_title(message, full_reply)
-            save_data(data)
-            yield f"data: {json.dumps({'done': True, 'title': conv['title']})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'token': f'Erreur: {str(e)}'})}\n\n"
-            yield f"data: {json.dumps({'done': True, 'title': conv['title']})}\n\n"
-    return Response(stream_with_context(generate()), mimetype="text/event-stream",
-                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    except Exception as e:
+        reply = f"Désolé, une erreur est survenue : {str(e)}"
+
+    conv["messages"].append({"role": "assistant", "text": reply})
+
+    # Génère un titre intelligent à la première échange
+    if len(conv["messages"]) == 2:
+        conv["title"] = generate_title(message, reply)
+
+    save_data(data)
+    return jsonify({"response": reply, "title": conv["title"]})
 
 @app.route("/delete/<cid>", methods=["POST"])
 def delete(cid):

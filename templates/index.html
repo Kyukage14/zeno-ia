@@ -2021,7 +2021,7 @@ async function openChat(id) {
   }
 }
 
-/* ─── SEND (STREAMING) ─── */
+/* ─── SEND ─── */
 async function send() {
   const input = document.getElementById('msg');
   const msg   = input.value.trim();
@@ -2044,15 +2044,13 @@ async function send() {
   }
   addMsg('user', displayText);
 
-  // Build full message with attachments content
+  // Build full message with file content
   let fullMessage = msg;
-  if (pendingAttachments.length > 0) {
-    for (const a of pendingAttachments) {
-      if (a.type === 'file' && a.content) {
-        fullMessage += `\n\n[Fichier joint : ${a.name}]\n${a.content}`;
-      } else if (a.type === 'image') {
-        fullMessage += `\n\n[Image jointe : ${a.name}]`;
-      }
+  for (const a of pendingAttachments) {
+    if (a.type === 'file' && a.content) {
+      fullMessage += `\n\n[Fichier : ${a.name}]\n${a.content}`;
+    } else if (a.type === 'image') {
+      fullMessage += `\n\n[Image : ${a.name}]`;
     }
   }
 
@@ -2060,100 +2058,38 @@ async function send() {
   pendingAttachments = [];
   renderAttachments();
 
+  // Show thinking indicator
   document.getElementById('thinking').style.display = 'block';
   scrollChat();
 
   const mode = document.getElementById('mode').value;
 
-  // Crée le bloc de réponse IA vide pour le streaming
-  const wrap    = document.getElementById('msg-wrap');
-  const aiDiv   = document.createElement('div');
-  aiDiv.className = 'message assistant';
-  const bubbleId  = 'bubble-' + Date.now();
-  aiDiv.innerHTML = `
-    <div class="msg-avatar ai">${zenoLogoSVG()}</div>
-    <div class="msg-body">
-      <div class="msg-sender">Zeno</div>
-      <div class="msg-bubble" id="${bubbleId}"></div>
-    </div>
-  `;
-  // On l'ajoute mais caché jusqu'au premier token
-  aiDiv.style.display = 'none';
-  wrap.appendChild(aiDiv);
-
-  let streamedText = '';
-
   try {
-    const res = await fetch('/chat/' + currentId, {
+    const res  = await fetch('/chat/' + currentId, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: fullMessage, mode })
     });
 
-    const reader  = res.body.getReader();
-    const decoder = new TextDecoder();
-    let   buffer  = '';
+    if (!res.ok) throw new Error('Erreur serveur ' + res.status);
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
+    const data = await res.json();
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop(); // garde la ligne incomplète
+    document.getElementById('thinking').style.display = 'none';
+    addMsg('assistant', data.response);
 
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const payload = JSON.parse(line.slice(6));
-
-          if (payload.token !== undefined) {
-            // Premier token — afficher le bloc et cacher le "réfléchit"
-            if (streamedText === '') {
-              document.getElementById('thinking').style.display = 'none';
-              aiDiv.style.display = 'flex';
-            }
-            streamedText += payload.token;
-            const bubbleEl = document.getElementById(bubbleId);
-            if (bubbleEl) bubbleEl.innerHTML = formatMessage(streamedText);
-            scrollChat();
-          }
-
-          if (payload.done) {
-            document.getElementById('thinking').style.display = 'none';
-            // Ajoute boutons copier sur les blocs de code
-            aiDiv.querySelectorAll('pre').forEach(pre => {
-              if (!pre.querySelector('.copy-code-btn')) {
-                const btn = document.createElement('button');
-                btn.className = 'copy-code-btn';
-                btn.textContent = 'Copier';
-                btn.onclick = () => {
-                  navigator.clipboard.writeText(pre.textContent.replace('Copier','').trim());
-                  btn.textContent = 'Copié !';
-                  setTimeout(() => btn.textContent = 'Copier', 2000);
-                };
-                pre.style.position = 'relative';
-                pre.appendChild(btn);
-              }
-            });
-
-            // Met à jour le titre dans la sidebar
-            if (payload.title) {
-              await loadConvs();
-              document.getElementById('chat-header-title').textContent = payload.title;
-            }
-          }
-        } catch(e) { /* ligne mal formée, on ignore */ }
-      }
+    // Update conversation title
+    if (data.title) {
+      await loadConvs();
+      document.getElementById('chat-header-title').textContent = data.title;
     }
+
   } catch(e) {
     document.getElementById('thinking').style.display = 'none';
-    const bubbleEl = document.getElementById(bubbleId);
-    if (bubbleEl) bubbleEl.innerHTML = "Erreur de connexion. Verifie qu'Ollama tourne.";
-    aiDiv.style.display = 'flex';
+    addMsg('assistant', 'Désolé, je ne peux pas répondre pour le moment. Réessaie dans quelques secondes.');
+    console.error('Send error:', e);
   }
 }
-
 /* ─── ADD MESSAGE ─── */
 function addMsg(role, text) {
   const wrap = document.getElementById('msg-wrap');

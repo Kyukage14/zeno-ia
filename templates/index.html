@@ -159,13 +159,18 @@ html, body { height: 100%; overflow: hidden; font-family: 'Inter', sans-serif; b
   background: none;
   border: none;
   cursor: pointer;
-  padding: 2px 4px;
+  padding: 2px 6px;
   transition: opacity .15s, color .15s;
   line-height: 1;
 }
 
 .conv-item:hover .conv-delete { opacity: 1; }
 .conv-delete:hover { color: #ff6b6b; }
+
+/* Sur mobile, toujours visible */
+@media (max-width: 768px) {
+  .conv-delete { opacity: 1; color: var(--muted2); }
+}
 
 /* ─── ACCOUNT ─── */
 .account-section { border-top: 1px solid var(--border); padding: 14px 16px; background: rgba(0,0,0,.2); flex-shrink: 0; }
@@ -1206,7 +1211,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Inter', sans-serif; b
   <div class="main">
 
     <div class="chat-header">
-      <button class="sidebar-toggle" id="sidebar-toggle-btn" onclick="toggleSidebar()" title="Ouvrir/fermer le panneau">
+      <button class="sidebar-toggle" id="sidebar-toggle-btn" onclick="event.stopPropagation();toggleSidebar()" title="Ouvrir/fermer le panneau">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <line x1="3" y1="6"  x2="21" y2="6"/>
           <line x1="3" y1="12" x2="21" y2="12"/>
@@ -1331,33 +1336,24 @@ html, body { height: 100%; overflow: hidden; font-family: 'Inter', sans-serif; b
 /* ═══════════════════════════════════════════
    APPEL VOCAL
 ═══════════════════════════════════════════ */
-let voiceConvId    = null;
-let recognition    = null;
-let isListening    = false;
-let isSpeaking     = false;
-let waveInterval   = null;
-let synth          = window.speechSynthesis;
+let voiceConvId  = null;
+let recognition  = null;
+let isListening  = false;
+let isSpeaking   = false;
+let waveInterval = null;
+let synth        = window.speechSynthesis;
 
-async function openVoiceCall() {
+function openVoiceCall() {
   document.getElementById('voice-overlay').classList.add('open');
   document.getElementById('voice-call-btn').classList.add('active');
   startWaveIdle();
-  setVoiceStatus('Zeno IA', 'Appuie sur le micro pour commencer à parler');
+  setVoiceStatus('Zeno IA', 'Appuie sur le micro et parle');
+  if (synth) synth.getVoices(); // pré-charge les voix
 
-  // Utilise la conv existante ou en crée une nouvelle
-  if (!currentId) {
-    try {
-      const r = await fetch('/new', { method: 'POST' });
-      const d = await r.json();
-      voiceConvId = d.id;
-      await loadConvs();
-    } catch(e) {
-      setVoiceStatus('Erreur', 'Impossible de se connecter au serveur');
-      return;
-    }
-  } else {
-    voiceConvId = currentId;
-  }
+  fetch('/new', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => { voiceConvId = d.id; })
+    .catch(() => { voiceConvId = currentId; });
 }
 
 function closeVoiceCall() {
@@ -1366,272 +1362,210 @@ function closeVoiceCall() {
   stopListening();
   if (synth) synth.cancel();
   stopWave();
-  setVoiceStatus('Zeno IA', 'Appuie sur le micro pour commencer à parler');
+  isListening = false;
+  isSpeaking  = false;
+  const tr = document.getElementById('voice-transcript');
+  if (tr) { tr.textContent = ''; tr.classList.remove('show'); }
+  setVoiceStatus('Zeno IA', 'Appuie sur le micro pour commencer');
 }
 
-/* ── MIC TOGGLE ── */
 function toggleMic() {
   if (isSpeaking) return;
-  if (isListening) {
-    stopListening();
-  } else {
-    startListening();
-  }
+  if (isListening) stopListening();
+  else startListening();
 }
 
 function startListening() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    setVoiceStatus('Non supporté', 'Ton navigateur ne supporte pas la reconnaissance vocale. Essaie Chrome.');
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    setVoiceStatus('Non supporté', 'Utilise Chrome sur Android pour les appels vocaux');
     return;
   }
+  if (synth) synth.cancel();
+  isSpeaking = false;
 
-  recognition = new SpeechRecognition();
-  recognition.lang       = 'fr-FR';
-  recognition.continuous = false;
+  recognition = new SR();
+  recognition.lang           = 'fr-FR';
+  recognition.continuous     = false;
   recognition.interimResults = true;
 
   recognition.onstart = () => {
     isListening = true;
     document.getElementById('voice-mic-btn').classList.add('listening');
-    setVoiceStatus('Écoute...', "Parle, je t'écoute");
+    setVoiceStatus('Écoute...', 'Parle maintenant');
     startWaveListening();
-    document.getElementById('voice-transcript').classList.add('show');
-    document.getElementById('voice-transcript').textContent = '';
+    const tr = document.getElementById('voice-transcript');
+    if (tr) { tr.classList.add('show'); tr.textContent = ''; }
   };
 
   recognition.onresult = (e) => {
-    let interim = '';
-    let final   = '';
+    let interim = '', final = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
       if (e.results[i].isFinal) final += e.results[i][0].transcript;
       else interim += e.results[i][0].transcript;
     }
-    document.getElementById('voice-transcript').textContent = final || interim;
+    const tr = document.getElementById('voice-transcript');
+    if (tr) tr.textContent = final || interim;
     if (final) recognition.stop();
   };
 
   recognition.onend = () => {
     isListening = false;
     document.getElementById('voice-mic-btn').classList.remove('listening');
-    const text = document.getElementById('voice-transcript').textContent.trim();
-    if (text) sendVoiceMessage(text);
-    else { setVoiceStatus('Zeno IA', "Rien entendu — réessaie !"); startWaveIdle(); }
+    const tr   = document.getElementById('voice-transcript');
+    const text = tr ? tr.textContent.trim() : '';
+    if (text && text.length > 1) sendVoiceMessage(text);
+    else { setVoiceStatus('Zeno IA', 'Rien entendu — réessaie'); startWaveIdle(); }
   };
 
   recognition.onerror = (e) => {
     isListening = false;
     document.getElementById('voice-mic-btn').classList.remove('listening');
-    setVoiceStatus('Zeno IA', e.error === 'not-allowed' ? "Autorise le micro dans ton navigateur" : "Erreur micro — réessaie");
+    const msgs = { 'not-allowed': 'Autorise le micro dans Chrome', 'no-speech': 'Rien détecté — réessaie', 'network': 'Erreur réseau', 'audio-capture': 'Micro introuvable' };
+    setVoiceStatus('Zeno IA', msgs[e.error] || 'Erreur — réessaie');
     startWaveIdle();
   };
 
-  recognition.start();
+  try { recognition.start(); }
+  catch(e) { setVoiceStatus('Erreur', 'Impossible de démarrer le micro'); }
 }
 
 function stopListening() {
-  if (recognition) { try { recognition.stop(); } catch(e){} }
+  if (recognition) { try { recognition.abort(); } catch(e){} recognition = null; }
   isListening = false;
-  document.getElementById('voice-mic-btn').classList.remove('listening');
+  const btn = document.getElementById('voice-mic-btn');
+  if (btn) btn.classList.remove('listening');
 }
 
-/* ── SEND VOICE MESSAGE ── */
 async function sendVoiceMessage(text) {
   if (!voiceConvId) {
-    const r = await fetch('/new', { method: 'POST' });
-    const d = await r.json();
-    voiceConvId = d.id;
+    try {
+      const r = await fetch('/new', { method: 'POST' });
+      const d = await r.json();
+      voiceConvId = d.id;
+    } catch(e) { setVoiceStatus('Erreur', 'Pas de connexion'); return; }
   }
 
   isSpeaking = true;
-  setVoiceStatus('Zeno réfléchit...', text);
+  setVoiceStatus('Zeno réfléchit...', text.length > 60 ? '"' + text.slice(0,60) + '..."' : '"' + text + '"');
   startWaveThinking();
 
   try {
-    // Si pas de conv id, en créer une
-    if (!voiceConvId) {
-      const nr = await fetch('/new', { method: 'POST' });
-      const nd = await nr.json();
-      voiceConvId = nd.id;
-    }
-
     const res = await fetch('/chat/' + voiceConvId, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: text, mode: 'fast', voice: true })
     });
-
-    if (!res.ok) throw new Error('Serveur: ' + res.status);
-
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     const reply = data.response;
-
-    if (!reply) throw new Error('Réponse vide');
-
-    setVoiceStatus('Zeno parle...', reply.length > 120 ? reply.slice(0, 120) + '…' : reply);
+    if (!reply || !reply.trim()) throw new Error('Réponse vide');
+    setVoiceStatus('Zeno parle...', reply.length > 80 ? reply.slice(0,80) + '…' : reply);
     speakText(reply);
-
   } catch(e) {
     console.error('Voice error:', e);
     isSpeaking = false;
-    setVoiceStatus('Zeno IA', 'Appuie sur le micro pour réessayer');
+    setVoiceStatus('Zeno IA', 'Erreur — appuie sur le micro pour réessayer');
     startWaveIdle();
   }
 }
 
-/* ── SPEECH SYNTHESIS ── */
 function speakText(text) {
   if (!synth) { isSpeaking = false; startWaveIdle(); return; }
   synth.cancel();
 
-  // Clean text for speech (remove markdown)
   const clean = text
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/\*([^*]+)\*/g, '$1')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/#{1,6}\s/g, '')
-    .replace(/<[^>]+>/g, '')
-    .trim();
+    .replace(/[*][*]([^*]+)[*][*]/g, '$1').replace(/[*]([^*]+)[*]/g, '$1')
+    .replace(/[`]([^`]+)[`]/g, '$1').replace(/#{1,6} /g, '')
+    .replace(/<[^>]+>/g, '').replace(/[\n\r]/g, ' ').trim();
 
-  function doSpeak(voices) {
-    const utter = new SpeechSynthesisUtterance(clean);
-    utter.lang  = 'fr-FR';
-    utter.rate  = 1.0;
-    utter.pitch = 1.05;
-    utter.volume = 1.0;
+  if (!clean) { isSpeaking = false; startWaveIdle(); return; }
 
-    // Pick best French voice
+  function doSpeak() {
+    const utter   = new SpeechSynthesisUtterance(clean);
+    utter.lang    = 'fr-FR';
+    utter.rate    = 1.0;
+    utter.pitch   = 1.05;
+    utter.volume  = 1.0;
+    const voices  = synth.getVoices();
     const frVoice = voices.find(v => v.lang === 'fr-FR' && v.localService)
                   || voices.find(v => v.lang === 'fr-FR')
-                  || voices.find(v => v.lang.startsWith('fr'))
-                  || null;
+                  || voices.find(v => v.lang.startsWith('fr')) || null;
     if (frVoice) utter.voice = frVoice;
 
-    utter.onstart = () => { startWaveSpeaking(); };
-
-    utter.onend = () => {
+    utter.onstart = () => startWaveSpeaking();
+    utter.onend   = () => {
       isSpeaking = false;
+      const tr = document.getElementById('voice-transcript');
+      if (tr) { tr.textContent = ''; tr.classList.remove('show'); }
       setVoiceStatus('Zeno IA', 'Appuie sur le micro pour répondre');
       startWaveIdle();
-      document.getElementById('voice-transcript').textContent = '';
-      document.getElementById('voice-transcript').classList.remove('show');
     };
-
-    utter.onerror = (e) => {
-      console.error('Speech error:', e);
-      isSpeaking = false;
-      startWaveIdle();
-      setVoiceStatus('Zeno IA', 'Appuie sur le micro pour répondre');
-    };
+    utter.onerror = () => { isSpeaking = false; startWaveIdle(); setVoiceStatus('Zeno IA', 'Appuie sur le micro pour continuer'); };
 
     synth.speak(utter);
-
-    // Chrome bug: sometimes speech doesn't start, nudge it
-    setTimeout(() => {
-      if (synth.paused) synth.resume();
-    }, 200);
+    setTimeout(() => { if (synth && synth.paused) synth.resume(); }, 300);
   }
 
-  // Chrome needs voices to be loaded — wait if empty
-  let voices = synth.getVoices();
-  if (voices.length > 0) {
-    doSpeak(voices);
-  } else {
-    synth.addEventListener('voiceschanged', () => {
-      voices = synth.getVoices();
-      doSpeak(voices);
-    }, { once: true });
-  }
-
-  // Placeholder so utter.onend logic doesn't need to be duplicated
-  const utter_placeholder = null;
-  const frVoice = null;
-
-  utter.onend = () => {
-    isSpeaking = false;
-    setVoiceStatus('Zeno IA', 'Appuie sur le micro pour répondre');
-    startWaveIdle();
-    document.getElementById('voice-transcript').textContent = '';
-  };
-
-  utter.onerror = () => {
-    isSpeaking = false;
-    startWaveIdle();
-  };
-
-  synth.speak(utter);
+  const voices = synth.getVoices();
+  if (voices.length > 0) doSpeak();
+  else synth.addEventListener('voiceschanged', doSpeak, { once: true });
 }
-
-/* ── WAVE ANIMATIONS ── */
-const WAVE_BARS = 15;
 
 function startWaveIdle() {
   stopWave();
   const bars = document.querySelectorAll('.voice-wave-bar');
-  const heights = [8,16,24,32,24,40,32,24,16,8,24,32,40,32,24];
-  bars.forEach((b,i) => b.style.height = heights[i] + 'px');
+  const h    = [8,16,24,32,24,40,32,24,16,8,24,32,40,32,24];
+  bars.forEach((b,i) => b.style.height = (h[i]||16) + 'px');
 }
-
 function startWaveListening() {
   stopWave();
   waveInterval = setInterval(() => {
-    document.querySelectorAll('.voice-wave-bar').forEach(b => {
-      b.style.height = (8 + Math.random() * 36) + 'px';
-    });
-  }, 100);
+    document.querySelectorAll('.voice-wave-bar').forEach(b => b.style.height = (6 + Math.random()*38) + 'px');
+  }, 90);
 }
-
 function startWaveThinking() {
   stopWave();
   let t = 0;
   waveInterval = setInterval(() => {
-    t += 0.2;
-    document.querySelectorAll('.voice-wave-bar').forEach((b,i) => {
-      b.style.height = (20 + Math.sin(t + i * 0.5) * 16) + 'px';
-    });
-  }, 60);
+    t += 0.25;
+    document.querySelectorAll('.voice-wave-bar').forEach((b,i) => b.style.height = (20 + Math.sin(t + i*0.6)*16) + 'px');
+  }, 55);
 }
-
 function startWaveSpeaking() {
   stopWave();
   waveInterval = setInterval(() => {
-    document.querySelectorAll('.voice-wave-bar').forEach(b => {
-      b.style.height = (12 + Math.random() * 28) + 'px';
-    });
-  }, 80);
+    document.querySelectorAll('.voice-wave-bar').forEach(b => b.style.height = (10 + Math.random()*30) + 'px');
+  }, 75);
 }
-
 function stopWave() {
   if (waveInterval) { clearInterval(waveInterval); waveInterval = null; }
 }
-
 function setVoiceStatus(title, sub) {
-  document.getElementById('voice-status').textContent = title;
-  document.getElementById('voice-sub').textContent = sub;
+  const t = document.getElementById('voice-status');
+  const s = document.getElementById('voice-sub');
+  if (t) t.textContent = title;
+  if (s) s.textContent = sub || '';
 }
 
 /* ── MOBILE SIDEBAR ── */
-const _origToggle = window.toggleSidebar;
 window.toggleSidebar = function() {
   sidebarOpen = !sidebarOpen;
   const sidebar = document.getElementById('sidebar');
   const overlay = document.getElementById('sidebar-overlay');
   if (window.innerWidth <= 768) {
-    // Mobile: drawer mode
     sidebar.classList.toggle('open-mobile', sidebarOpen);
     if (overlay) overlay.classList.toggle('show', sidebarOpen);
   } else {
-    // Desktop: collapse mode
     sidebar.classList.toggle('collapsed', !sidebarOpen);
   }
 };
 
-// Close sidebar when clicking a conv on mobile
 document.addEventListener('click', function(e) {
   if (window.innerWidth <= 768 && sidebarOpen) {
     const sidebar = document.getElementById('sidebar');
-    const toggle  = document.getElementById('sidebar-toggle-btn');
-    if (sidebar && !sidebar.contains(e.target) && e.target !== toggle) {
+    const btn     = document.getElementById('sidebar-toggle-btn');
+    if (sidebar && !sidebar.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
       sidebarOpen = false;
       sidebar.classList.remove('open-mobile');
       const overlay = document.getElementById('sidebar-overlay');
@@ -1640,763 +1574,22 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// Handle resize
 window.addEventListener('resize', function() {
   const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
   if (window.innerWidth > 768) {
     sidebar.classList.remove('open-mobile');
-    if (!sidebarOpen) sidebar.classList.add('collapsed');
-    else sidebar.classList.remove('collapsed');
+    sidebar.classList.toggle('collapsed', !sidebarOpen);
     const overlay = document.getElementById('sidebar-overlay');
     if (overlay) overlay.classList.remove('show');
   }
 });
 
-// Close sidebar on mobile when clicking a conversation
-const _origOpenChat = window.openChat;
-
-/* ═══════════════════════════════════════════
-   PARAMÈTRES
-═══════════════════════════════════════════ */
-function openSettings(tab) {
-  const overlay = document.getElementById('settings-overlay');
-  overlay.style.display = 'flex';
-  showTab(tab || 'compte');
-  // Remplis les champs avec les infos actuelles
-  if (currentUser) {
-    const pEl = document.getElementById('s-prenom');
-    const eEl = document.getElementById('s-email');
-    const aEl = document.getElementById('s-avatar-preview');
-    if (pEl) pEl.value = currentUser.prenom || '';
-    if (eEl) eEl.value = currentUser.email || '';
-    if (aEl) aEl.textContent = (currentUser.prenom || currentUser.email || 'U')[0].toUpperCase();
-    updatePlanUI(currentUser.plan || 'free');
-  }
-}
-
-function closeSettings() {
-  document.getElementById('settings-overlay').style.display = 'none';
-}
-
-/* Tabs */
-const TABS = ['compte','plan','apparence','notifs','securite','ia'];
-function showTab(name) {
-  TABS.forEach(t => {
-    document.getElementById('tab-' + t).style.display  = t === name ? 'block' : 'none';
-    const el = document.getElementById('stab-' + t);
-    if (el) el.className = 'stab' + (t === name ? ' active' : '');
-  });
-}
-
-/* Plan UI */
-function updatePlanUI(plan) {
-  const names  = { free: 'Gratuit', pro: 'Pro', expert: 'Expert' };
-  const nameEl = document.getElementById('current-plan-name');
-  const badgeEl= document.getElementById('current-plan-badge');
-  if (nameEl)  nameEl.textContent = names[plan] || 'Gratuit';
-
-  // Reset all rows
-  ['free','pro','expert'].forEach(p => {
-    const row = document.getElementById('plan-row-' + p);
-    const btn = document.getElementById('btn-' + p);
-    if (!row || !btn) return;
-    row.className = 'plan-row' + (p === plan ? ' current' : '');
-    if (p === plan) {
-      btn.className   = 'plan-select-btn outline';
-      btn.textContent = 'Plan actuel';
-      btn.onclick     = null;
-    } else {
-      btn.className   = 'plan-select-btn filled';
-      btn.textContent = p === 'pro' ? 'Choisir Pro' : 'Choisir Expert';
-      btn.onclick     = () => selectPlan(p);
-    }
-  });
-}
-
-function selectPlan(plan) {
-  if (!currentUser || currentUser.plan === plan) return;
-  document.getElementById('payment-zone').style.display = 'block';
-  // Store chosen plan for payment
-  document.getElementById('payment-zone').dataset.plan = plan;
-  // Scroll to payment zone
-  document.getElementById('payment-zone').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-
-function payWith(method) {
-  document.getElementById('payment-soon').style.display = 'block';
-}
-
-/* Save account */
-async function saveAccount() {
-  const prenom = document.getElementById('s-prenom').value.trim();
-  const msgEl  = document.getElementById('s-account-msg');
-  // For now just update display
-  if (prenom && currentUser) {
-    currentUser.prenom = prenom;
-    document.getElementById('acc-name').textContent = prenom;
-    document.getElementById('acc-avatar').textContent = prenom[0].toUpperCase();
-    document.getElementById('s-avatar-preview').textContent = prenom[0].toUpperCase();
-  }
-  msgEl.textContent = 'Modifications enregistrées !';
-  msgEl.style.display = 'block';
-  setTimeout(() => msgEl.style.display = 'none', 3000);
-}
-
-/* Change password */
-async function changePassword() {
-  const oldPw  = document.getElementById('s-pw-old').value;
-  const newPw  = document.getElementById('s-pw-new').value;
-  const confPw = document.getElementById('s-pw-confirm').value;
-  const msgEl  = document.getElementById('s-pw-msg');
-
-  if (!oldPw || !newPw || !confPw) {
-    msgEl.textContent = 'Remplis tous les champs.';
-    msgEl.style.color = '#ff6b6b';
-    msgEl.style.display = 'block';
-    return;
-  }
-  if (newPw !== confPw) {
-    msgEl.textContent = 'Les mots de passe ne correspondent pas.';
-    msgEl.style.color = '#ff6b6b';
-    msgEl.style.display = 'block';
-    return;
-  }
-  if (newPw.length < 6) {
-    msgEl.textContent = 'Le mot de passe doit faire au moins 6 caractères.';
-    msgEl.style.color = '#ff6b6b';
-    msgEl.style.display = 'block';
-    return;
-  }
-  // TODO: appel API /change-password quand backend prêt
-  msgEl.textContent = 'Mot de passe mis à jour !';
-  msgEl.style.color = '#00d4ff';
-  msgEl.style.display = 'block';
-  document.getElementById('s-pw-old').value = '';
-  document.getElementById('s-pw-new').value = '';
-  document.getElementById('s-pw-confirm').value = '';
-  setTimeout(() => msgEl.style.display = 'none', 3000);
-}
-
-/* Toggles */
-function toggleSetting(id) {
-  const el = document.getElementById('toggle-' + id);
-  if (!el) return;
-  const on = el.dataset.on === 'true';
-  el.dataset.on = String(!on);
-}
-
-/* Appearance */
-function setTheme(theme) {
-  // Les boutons de thème n'existent que dans la modale paramètres — vérifier avant
-  ['dark','light','midnight'].forEach(t => {
-    const el = document.getElementById('theme-' + t);
-    if (el) el.className = 'theme-card' + (t === theme ? ' active' : '');
-  });
-  const root = document.documentElement;
-  if (theme === 'light') {
-    root.style.setProperty('--bg',      '#f4f6fb');
-    root.style.setProperty('--surface', '#ffffff');
-    root.style.setProperty('--card',    '#edf0f7');
-    root.style.setProperty('--card2',   '#e4e8f2');
-    root.style.setProperty('--border',  '#d0d5e8');
-    root.style.setProperty('--white',   '#1b2333');
-    root.style.setProperty('--muted',   '#5a6380');
-    root.style.setProperty('--muted2',  '#8890aa');
-    document.body.style.colorScheme = 'light';
-  } else if (theme === 'midnight') {
-    root.style.setProperty('--bg',      '#04000f');
-    root.style.setProperty('--surface', '#080014');
-    root.style.setProperty('--card',    '#0d0020');
-    root.style.setProperty('--card2',   '#120028');
-    root.style.setProperty('--border',  '#2a0050');
-    root.style.setProperty('--white',   '#f0e8ff');
-    root.style.setProperty('--muted',   '#8860cc');
-    root.style.setProperty('--muted2',  '#5a3a8a');
-    document.body.style.colorScheme = 'dark';
-  } else {
-    root.style.setProperty('--bg',      '#080a14');
-    root.style.setProperty('--surface', '#0d0f22');
-    root.style.setProperty('--card',    '#141830');
-    root.style.setProperty('--card2',   '#1a1e38');
-    root.style.setProperty('--border',  '#1e2240');
-    root.style.setProperty('--white',   '#f0f4ff');
-    root.style.setProperty('--muted',   '#6b7299');
-    root.style.setProperty('--muted2',  '#4a506e');
-    document.body.style.colorScheme = 'dark';
-  }
-  localStorage.setItem('zeno-theme', theme);
-  currentTheme = theme;
-}
-
-function setFontSize(size) {
-  ['sm','md','lg'].forEach(s => {
-    const el = document.getElementById('size-' + s);
-    if (el) el.className = 'size-btn' + (s === size ? ' active' : '');
-  });
-  const sizes = { sm: '13px', md: '15px', lg: '17px' };
-  document.querySelectorAll('.msg-bubble').forEach(el => el.style.fontSize = sizes[size]);
-  document.documentElement.style.setProperty('--msg-font', sizes[size]);
-  localStorage.setItem('zeno-fontsize', size);
-}
-
-function saveAppearance() {
-  const msgEl = document.createElement('div');
-  showToast('Apparence mise à jour !');
-}
-
-/* IA settings */
-function saveIASettings() {
-  const mode = document.getElementById('s-default-mode').value;
-  const modeSelect = document.getElementById('mode');
-  if (modeSelect) modeSelect.value = mode;
-
-  const msgEl = document.getElementById('s-ia-msg');
-  msgEl.textContent = 'Préférences enregistrées !';
-  msgEl.style.display = 'block';
-  setTimeout(() => msgEl.style.display = 'none', 3000);
-}
-
-function doLogout() {
-  showConfirm('Se déconnecter ?', 'Tu devras te reconnecter pour accéder à Nova.', () => {
-    window.location.href = '/';
-  });
-}
-
-/* Close settings with Escape */
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeSettings();
+  if (e.key === 'Escape') { closeSettings(); closeVoiceCall(); closeGenModal(); }
 });
 
-let currentId  = null;
-let allConvs   = [];
-let sidebarOpen = true;
-let pendingAttachments = []; // {type:'image'|'file', name, dataUrl?, content?}
-let currentUser = null;
 
-/* ─── INIT ─── */
-async function init() {
-  // Restore appearance preferences
-  const savedTheme = localStorage.getItem('zeno-theme');
-  const savedFont  = localStorage.getItem('zeno-fontsize');
-  if (savedTheme) setTheme(savedTheme);
-  if (savedFont)  setFontSize(savedFont);
-
-  // On mobile: sidebar fermée par défaut
-  if (window.innerWidth <= 768) {
-    sidebarOpen = false;
-    document.getElementById('sidebar').classList.add('collapsed');
-  }
-
-  await loadUser();
-  await loadConvs();
-}
-
-/* ─── LOAD USER INFO ─── */
-async function loadUser() {
-  try {
-    const res  = await fetch('/me');
-    if (!res.ok) { window.location.replace('/'); return; }
-    const data = await res.json();
-    if (!data.ok) {
-      window.location.replace('/');
-      return;
-    }
-    currentUser = data;
-    applyUserUI(data);
-  } catch(e) {
-    // Retry once before giving up
-    try {
-      const res2  = await fetch('/me');
-      const data2 = await res2.json();
-      if (!data2.ok) { window.location.replace('/'); return; }
-      currentUser = data2;
-      applyUserUI(data2);
-    } catch(e2) {
-      applyUserUI({ email: 'dev@zeno.ia', prenom: 'Dev', plan: 'expert' });
-    }
-  }
-}
-
-function applyUserUI(u) {
-  // Remove loading state
-  const accSection = document.getElementById('account-section');
-  if (accSection) accSection.classList.remove('loading');
-  const initial = (u.prenom || u.email || 'U')[0].toUpperCase();
-  const avatarEl = document.getElementById('acc-avatar');
-  avatarEl.textContent = initial;
-
-  document.getElementById('acc-name').textContent = u.prenom || u.email;
-  document.getElementById('dd-name').textContent  = u.prenom || 'Utilisateur';
-  document.getElementById('dd-email').textContent = u.email;
-
-  const isExpert = u.plan === 'expert';
-  const badge    = document.getElementById('acc-plan-badge');
-  const planText = document.getElementById('acc-plan-text');
-
-  if (isExpert) {
-    badge.textContent = 'EXPERT';
-    badge.className   = 'plan-badge expert';
-    avatarEl.className = 'account-avatar expert';
-    planText.textContent = 'Plan Expert';
-    document.getElementById('expert-banner-wrap').style.display = 'block';
-    document.getElementById('upgrade-banner-wrap').style.display = 'none';
-  } else if (u.plan === 'pro') {
-    badge.textContent = 'PRO';
-    planText.textContent = 'Plan Pro';
-  } else {
-    badge.textContent = 'GRATUIT';
-    planText.textContent = 'Plan gratuit';
-  }
-}
-
-/* ─── SIDEBAR TOGGLE ─── */
-function toggleSidebar() {
-  sidebarOpen = !sidebarOpen;
-  document.getElementById('sidebar').classList.toggle('collapsed', !sidebarOpen);
-}
-
-/* ─── LOAD CONVERSATIONS ─── */
-async function loadConvs() {
-  const res  = await fetch('/conversations');
-  const data = await res.json();
-  allConvs   = data.conversations;
-  renderConvs(allConvs);
-}
-
-function renderConvs(list) {
-  const el = document.getElementById('list');
-  el.innerHTML = '';
-  list.forEach(c => {
-    const div = document.createElement('div');
-    div.className = 'conv-item' + (c.id === currentId ? ' active' : '');
-    div.innerHTML = `
-      <span class="conv-item-title">${escHtml(c.title)}</span>
-      <button class="conv-delete" onclick="deleteChat(event,'${c.id}')" title="Supprimer">✕</button>
-    `;
-    div.onclick = () => openChat(c.id);
-    el.appendChild(div);
-  });
-}
-
-function filterConvs(q) {
-  const filtered = q ? allConvs.filter(c => c.title.toLowerCase().includes(q.toLowerCase())) : allConvs;
-  renderConvs(filtered);
-}
-
-/* ─── NEW CHAT ─── */
-async function newChat() {
-  const res = await fetch('/new', { method: 'POST' });
-  const data = await res.json();
-  currentId = data.id;
-  document.getElementById('msg-wrap').innerHTML = '';
-  document.getElementById('chat').style.display   = 'none';
-  document.getElementById('welcome').style.display = 'flex';
-  document.getElementById('chat-header-title').textContent = 'Nouvelle conversation';
-  pendingAttachments = [];
-  renderAttachments();
-  await loadConvs();
-}
-
-/* ─── OPEN CHAT ─── */
-async function openChat(id) {
-  currentId = id;
-  const res  = await fetch('/conversation/' + id);
-  const data = await res.json();
-
-  document.getElementById('msg-wrap').innerHTML  = '';
-  document.getElementById('welcome').style.display = 'none';
-  document.getElementById('chat').style.display   = 'block';
-
-  const conv = allConvs.find(c => c.id === id);
-  document.getElementById('chat-header-title').textContent = conv ? conv.title : 'Conversation';
-  data.messages.forEach(m => addMsg(m.role, m.text));
-  renderConvs(allConvs);
-
-  // Ferme la sidebar sur mobile après avoir ouvert une conv
-  if (window.innerWidth <= 768 && sidebarOpen) {
-    sidebarOpen = false;
-    document.getElementById('sidebar').classList.remove('open-mobile');
-    const overlay = document.getElementById('sidebar-overlay');
-    if (overlay) overlay.classList.remove('show');
-  }
-}
-
-/* ─── SEND ─── */
-async function send() {
-  const input = document.getElementById('msg');
-  const msg   = input.value.trim();
-  if (!msg && pendingAttachments.length === 0) return;
-
-  if (!currentId) {
-    const r = await fetch('/new', { method: 'POST' });
-    const d = await r.json();
-    currentId = d.id;
-    await loadConvs();
-  }
-
-  document.getElementById('welcome').style.display = 'none';
-  document.getElementById('chat').style.display    = 'block';
-
-  // Build display text for user bubble
-  let displayText = msg;
-  if (pendingAttachments.length > 0) {
-    displayText += (msg ? '\n' : '') + pendingAttachments.map(a => `[${a.name}]`).join(' ');
-  }
-  addMsg('user', displayText);
-
-  // Build full message with file content
-  let fullMessage = msg;
-  for (const a of pendingAttachments) {
-    if (a.type === 'file' && a.content) {
-      fullMessage += `\n\n[Fichier : ${a.name}]\n${a.content}`;
-    } else if (a.type === 'image') {
-      fullMessage += `\n\n[Image : ${a.name}]`;
-    }
-  }
-
-  input.value = '';
-  pendingAttachments = [];
-  renderAttachments();
-
-  // Show thinking indicator
-  document.getElementById('thinking').style.display = 'block';
-  scrollChat();
-
-  const mode = document.getElementById('mode').value;
-
-  try {
-    const res  = await fetch('/chat/' + currentId, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: fullMessage, mode })
-    });
-
-    if (!res.ok) throw new Error('Erreur serveur ' + res.status);
-
-    const data = await res.json();
-
-    document.getElementById('thinking').style.display = 'none';
-    addMsg('assistant', data.response);
-
-    // Update conversation title
-    if (data.title) {
-      await loadConvs();
-      document.getElementById('chat-header-title').textContent = data.title;
-    }
-
-  } catch(e) {
-    document.getElementById('thinking').style.display = 'none';
-    addMsg('assistant', 'Désolé, je ne peux pas répondre pour le moment. Réessaie dans quelques secondes.');
-    console.error('Send error:', e);
-  }
-}
-/* ─── ADD MESSAGE ─── */
-function addMsg(role, text) {
-  const wrap = document.getElementById('msg-wrap');
-  const div  = document.createElement('div');
-  div.className = 'message ' + role;
-  const isAI = role === 'assistant';
-  const id   = 'msg-' + Date.now();
-
-  div.innerHTML = `
-    <div class="msg-avatar ${isAI ? 'ai' : 'user'}">
-      ${isAI ? zenoLogoSVG() : 'T'}
-    </div>
-    <div class="msg-body">
-      <div class="msg-sender">${isAI ? 'Zeno' : 'Toi'}</div>
-      <div class="msg-bubble" id="${id}">${formatMessage(text)}</div>
-    </div>
-  `;
-  wrap.appendChild(div);
-
-  // add copy buttons to code blocks
-  div.querySelectorAll('pre').forEach(pre => {
-    const btn = document.createElement('button');
-    btn.className = 'copy-code-btn';
-    btn.textContent = 'Copier';
-    btn.onclick = () => { navigator.clipboard.writeText(pre.textContent.replace('Copier','').trim()); btn.textContent = '✓ Copié'; setTimeout(()=>btn.textContent='Copier', 2000); };
-    pre.style.position = 'relative';
-    pre.appendChild(btn);
-  });
-
-  scrollChat();
-}
-
-function zenoLogoSVG() {
-  const uid = 'n' + Math.random().toString(36).slice(2,6);
-  return `<svg viewBox="0 0 48 48" fill="none"><defs><linearGradient id="${uid}" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#6c63ff"/><stop offset="100%" stop-color="#00d4ff"/></linearGradient></defs><path d="M24 3 L42 13.5 L42 34.5 L24 45 L6 34.5 L6 13.5 Z" fill="rgba(108,99,255,.2)" stroke="url(#${uid})" stroke-width="1.5"/><path d="M27 10 L18 26 L24 26 L21 38 L30 22 L24 22 Z" fill="url(#${uid})"/></svg>`;
-}
-
-function formatMessage(text) {
-  // code blocks
-  text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) =>
-    `<pre><code class="language-${lang}">${escHtml(code.trim())}</code></pre>`
-  );
-  // inline code
-  text = text.replace(/`([^`]+)`/g, '<code style="background:rgba(108,99,255,.15);padding:2px 6px;border-radius:4px;font-size:13px;">$1</code>');
-  // bold
-  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  // italic
-  text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  // newlines
-  text = text.replace(/\n/g, '<br>');
-  return text;
-}
-
-function escHtml(t) {
-  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function scrollChat() {
-  const chat = document.getElementById('chat');
-  requestAnimationFrame(() => { chat.scrollTop = chat.scrollHeight; });
-}
-
-/* ─── DELETE CHAT ─── */
-async function deleteChat(e, id) {
-  e.stopPropagation();
-  showConfirm('Supprimer cette conversation ?', 'Cette action est irréversible.', async () => {
-    await fetch('/delete/' + id, { method: 'POST' });
-    if (currentId === id) {
-      currentId = null;
-      document.getElementById('msg-wrap').innerHTML = '';
-      document.getElementById('chat').style.display    = 'none';
-      document.getElementById('welcome').style.display = 'flex';
-      document.getElementById('chat-header-title').textContent = 'Zeno IA';
-    }
-    loadConvs();
-  });
-}
-
-/* ─── CONFIRM DIALOG ─── */
-function showConfirm(title, subtitle, onConfirm) {
-  // Remove existing if any
-  const existing = document.getElementById('confirm-overlay');
-  if (existing) existing.remove();
-
-  const overlay = document.createElement('div');
-  overlay.id = 'confirm-overlay';
-  overlay.style.cssText = `
-    position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);
-    z-index:500;display:flex;align-items:center;justify-content:center;
-  `;
-
-  overlay.innerHTML = `
-    <div style="
-      background:#141830;border:1px solid #1e2240;border-radius:20px;
-      padding:36px 32px;width:380px;text-align:center;
-      box-shadow:0 20px 60px rgba(0,0,0,.5);
-    ">
-      <div style="
-        width:52px;height:52px;border-radius:50%;
-        background:rgba(255,107,107,.12);border:1px solid rgba(255,107,107,.3);
-        display:flex;align-items:center;justify-content:center;
-        margin:0 auto 20px;font-size:22px;
-      ">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff6b6b" stroke-width="2" stroke-linecap="round">
-          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
-          <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
-        </svg>
-      </div>
-      <div style="font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;color:#f0f4ff;margin-bottom:8px;">${title}</div>
-      <div style="font-size:13px;color:#6b7299;margin-bottom:28px;">${subtitle}</div>
-      <div style="display:flex;gap:12px;justify-content:center;">
-        <button id="confirm-cancel" style="
-          flex:1;padding:12px;border-radius:12px;border:1px solid #1e2240;
-          background:transparent;color:#f0f4ff;font-size:14px;font-weight:500;
-          cursor:pointer;font-family:'Inter',sans-serif;transition:background .15s;
-        ">Annuler</button>
-        <button id="confirm-ok" style="
-          flex:1;padding:12px;border-radius:12px;border:none;
-          background:linear-gradient(135deg,#ff6b6b,#ee5a24);color:#fff;
-          font-size:14px;font-weight:600;cursor:pointer;
-          font-family:'Inter',sans-serif;transition:opacity .15s;
-        ">Supprimer</button>
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(overlay);
-
-  document.getElementById('confirm-cancel').onclick = () => overlay.remove();
-  document.getElementById('confirm-ok').onclick = () => { overlay.remove(); onConfirm(); };
-  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
-}
-
-/* ─── ACCOUNT TOGGLE ─── */
-let accountOpen = false;
-function toggleAccount() {
-  accountOpen = !accountOpen;
-  document.getElementById('account-dropdown').className = 'account-dropdown' + (accountOpen ? ' open' : '');
-  document.getElementById('acc-chevron').textContent = accountOpen ? '▼' : '▲';
-}
-
-/* ─── PLUS MENU ─── */
-let plusOpen = false;
-function togglePlusMenu(e) {
-  e.stopPropagation();
-  plusOpen = !plusOpen;
-  document.getElementById('plus-dropdown').classList.toggle('open', plusOpen);
-}
-
-document.addEventListener('click', () => {
-  plusOpen = false;
-  document.getElementById('plus-dropdown').classList.remove('open');
-});
-
-/* ─── FILE UPLOADS ─── */
-function triggerImageUpload() {
-  plusOpen = false;
-  document.getElementById('plus-dropdown').classList.remove('open');
-  document.getElementById('file-input-image').click();
-}
-
-function triggerDocUpload() {
-  plusOpen = false;
-  document.getElementById('plus-dropdown').classList.remove('open');
-  document.getElementById('file-input-doc').click();
-}
-
-document.getElementById('file-input-image').addEventListener('change', function() {
-  const file = this.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    pendingAttachments.push({ type: 'image', name: file.name, dataUrl: e.target.result });
-    renderAttachments();
-  };
-  reader.readAsDataURL(file);
-  this.value = '';
-});
-
-document.getElementById('file-input-doc').addEventListener('change', function() {
-  const file = this.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    pendingAttachments.push({ type: 'file', name: file.name, content: e.target.result });
-    renderAttachments();
-  };
-  reader.readAsText(file);
-  this.value = '';
-});
-
-function renderAttachments() {
-  const wrap = document.getElementById('attachment-preview');
-  if (pendingAttachments.length === 0) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
-  wrap.style.display = 'flex';
-  wrap.innerHTML = pendingAttachments.map((a, i) => `
-    <div class="attach-chip">
-      ${a.type === 'image' ? `<img src="${a.dataUrl}" alt="${a.name}">` : '📄'}
-      <span>${a.name}</span>
-      <button class="attach-chip-remove" onclick="removeAttachment(${i})">✕</button>
-    </div>
-  `).join('');
-}
-
-function removeAttachment(i) {
-  pendingAttachments.splice(i, 1);
-  renderAttachments();
-}
-
-/* ─── GENERATE IMAGE MODAL ─── */
-function openGenModal() {
-  plusOpen = false;
-  document.getElementById('plus-dropdown').classList.remove('open');
-  document.getElementById('gen-modal').classList.add('open');
-}
-
-function closeGenModal() {
-  document.getElementById('gen-modal').classList.remove('open');
-}
-
-async function generateImage() {
-  const prompt = document.getElementById('gen-prompt').value.trim();
-  if (!prompt) return;
-
-  const btn = document.getElementById('gen-submit-btn');
-  btn.textContent = 'Génération en cours…';
-  btn.disabled = true;
-
-  closeGenModal();
-  document.getElementById('gen-prompt').value = '';
-
-  if (!currentId) {
-    const r = await fetch('/new', { method: 'POST' });
-    const d = await r.json();
-    currentId = d.id;
-    await loadConvs();
-  }
-
-  document.getElementById('welcome').style.display = 'none';
-  document.getElementById('chat').style.display    = 'block';
-
-  addMsg('user', `✨ Génère une image : ${prompt}`);
-  document.getElementById('thinking').style.display = 'block';
-  scrollChat();
-
-  // Ask Zeno to describe/create the image via Pollinations (free image generation API)
-  try {
-    const encodedPrompt = encodeURIComponent(prompt);
-    const imgUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=512&height=512&nologo=true`;
-
-    // Preload image
-    const img = new Image();
-    img.onload = () => {
-      document.getElementById('thinking').style.display = 'none';
-      // Add as AI message with image card
-      const wrap = document.getElementById('msg-wrap');
-      const div  = document.createElement('div');
-      div.className = 'message assistant';
-      const uid = 'n' + Math.random().toString(36).slice(2,6);
-      div.innerHTML = `
-        <div class="msg-avatar ai">${zenoLogoSVG()}</div>
-        <div class="msg-body">
-          <div class="msg-sender">Zeno</div>
-          <div class="msg-bubble">
-            Voici l'image générée pour : <em>${escHtml(prompt)}</em>
-            <div class="gen-img-card">
-              <img src="${imgUrl}" alt="${escHtml(prompt)}">
-              <div class="gen-img-card-footer">
-                <span>Généré par Zeno IA</span>
-                <a href="${imgUrl}" download="nova-image.jpg" style="color:var(--violet);font-size:12px;text-decoration:none;">⬇ Télécharger</a>
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
-      wrap.appendChild(div);
-      scrollChat();
-      btn.textContent = 'Générer l\'image →';
-      btn.disabled = false;
-    };
-    img.onerror = () => {
-      document.getElementById('thinking').style.display = 'none';
-      addMsg("assistant", `Je n'ai pas pu générer l'image pour "${prompt}". Essaie une autre description.`);
-      btn.textContent = 'Générer l\'image →';
-      btn.disabled = false;
-    };
-    img.src = imgUrl;
-  } catch(e) {
-    document.getElementById('thinking').style.display = 'none';
-    addMsg('assistant', 'Une erreur est survenue lors de la génération.');
-    btn.textContent = 'Générer l\'image →';
-    btn.disabled = false;
-  }
-}
-
-/* ─── ENTER KEY ─── */
-document.getElementById('msg').addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-});
-
-/* ─── TOAST ─── */
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 3000);
-}
 
 init();
 </script>
@@ -2420,8 +1613,9 @@ init();
       width:220px;flex-shrink:0;border-right:1px solid #1e2240;
       background:#080a14;display:flex;flex-direction:column;padding:24px 0;
     ">
-      <div style="padding:0 20px 20px;border-bottom:1px solid #1e2240;margin-bottom:12px;">
+      <div style="padding:0 20px 20px;border-bottom:1px solid #1e2240;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;">
         <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px;color:#f0f4ff;">Paramètres</div>
+        <button onclick="closeSettings()" style="background:rgba(255,255,255,.06);border:1px solid #1e2240;color:#6b7299;width:28px;height:28px;border-radius:7px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;line-height:1;">×</button>
       </div>
 
       <div id="stab-compte"    class="stab active"  onclick="showTab('compte')">Mon compte</div>
@@ -2574,15 +1768,15 @@ init();
         <div class="s-section">
           <div class="s-label">Thème</div>
           <div style="display:flex;gap:12px;margin-top:8px;">
-            <div class="theme-card active" id="theme-dark" onclick="setTheme('dark')">
+            <div class="theme-card active" id="theme-dark" onclick="pendingTheme='dark';setTheme('dark')">
               <div style="width:100%;height:40px;background:#080a14;border-radius:8px 8px 0 0;border-bottom:1px solid #1e2240;"></div>
               <div style="padding:8px;font-size:12px;color:#f0f4ff;font-weight:500;">Sombre</div>
             </div>
-            <div class="theme-card" id="theme-light" onclick="setTheme('light')">
+            <div class="theme-card" id="theme-light" onclick="pendingTheme='light';setTheme('light')">
               <div style="width:100%;height:40px;background:#f0f4ff;border-radius:8px 8px 0 0;border-bottom:1px solid #dde4f0;"></div>
               <div style="padding:8px;font-size:12px;color:#f0f4ff;font-weight:500;">Clair</div>
             </div>
-            <div class="theme-card" id="theme-midnight" onclick="setTheme('midnight')">
+            <div class="theme-card" id="theme-midnight" onclick="pendingTheme='midnight';setTheme('midnight')">
               <div style="width:100%;height:40px;background:#0a0014;border-radius:8px 8px 0 0;border-bottom:1px solid #2a0050;"></div>
               <div style="padding:8px;font-size:12px;color:#f0f4ff;font-weight:500;">Minuit</div>
             </div>
@@ -2593,9 +1787,9 @@ init();
         <div class="s-section">
           <div class="s-label">Taille du texte</div>
           <div style="display:flex;gap:10px;margin-top:8px;">
-            <button class="size-btn active" id="size-sm" onclick="setFontSize('sm')">Petit</button>
-            <button class="size-btn" id="size-md" onclick="setFontSize('md')">Moyen</button>
-            <button class="size-btn" id="size-lg" onclick="setFontSize('lg')">Grand</button>
+            <button class="size-btn active" id="size-sm" onclick="pendingFontSize='sm';previewFontSize('sm')">Petit</button>
+            <button class="size-btn" id="size-md" onclick="pendingFontSize='md';previewFontSize('md')">Moyen</button>
+            <button class="size-btn" id="size-lg" onclick="pendingFontSize='lg';previewFontSize('lg')">Grand</button>
           </div>
         </div>
 
@@ -2610,7 +1804,10 @@ init();
         </div>
 
         <div class="s-divider"></div>
-        <button class="s-btn-primary" onclick="saveAppearance()">Appliquer</button>
+        <div style="display:flex;gap:12px;">
+          <button class="s-btn-primary" onclick="saveAppearance()">Appliquer</button>
+          <button onclick="cancelAppearance()" style="padding:12px 20px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:14px;cursor:pointer;font-family:'Inter',sans-serif;">Annuler</button>
+        </div>
       </div>
 
       <!-- ── NOTIFICATIONS ── -->

@@ -1787,8 +1787,10 @@ function toggleSetting(id) {
 
 /* Appearance */
 function setTheme(theme) {
+  // Les boutons de thème n'existent que dans la modale paramètres — vérifier avant
   ['dark','light','midnight'].forEach(t => {
-    document.getElementById('theme-' + t).className = 'theme-card' + (t === theme ? ' active' : '');
+    const el = document.getElementById('theme-' + t);
+    if (el) el.className = 'theme-card' + (t === theme ? ' active' : '');
   });
   const root = document.documentElement;
   if (theme === 'light') {
@@ -1828,7 +1830,8 @@ function setTheme(theme) {
 
 function setFontSize(size) {
   ['sm','md','lg'].forEach(s => {
-    document.getElementById('size-' + s).className = 'size-btn' + (s === size ? ' active' : '');
+    const el = document.getElementById('size-' + s);
+    if (el) el.className = 'size-btn' + (s === size ? ' active' : '');
   });
   const sizes = { sm: '13px', md: '15px', lg: '17px' };
   document.querySelectorAll('.msg-bubble').forEach(el => el.style.fontSize = sizes[size]);

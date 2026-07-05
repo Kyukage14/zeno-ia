@@ -117,44 +117,139 @@ def verify_remember_token(token):
         return None
     return entry.get("email")
 
-def call_ai(messages, mode="balanced"):
-    """Appel IA robuste avec fallback et gestion d'erreurs complète."""
-    max_tokens = 4096 if mode == "deep" else (512 if mode == "fast" else 2048)
+# Mots-clés qui indiquent qu'une recherche web est nécessaire
+WEB_SEARCH_KEYWORDS = [
+    "actualité", "actualités", "news", "aujourd'hui", "cette semaine", "ce mois",
+    "en ce moment", "dernière", "dernier", "récent", "récente", "nouveauté",
+    "vient de", "annoncé", "2024", "2025", "maintenant", "live", "direct",
+    "météo", "cours", "bourse", "prix", "résultat", "score", "classement",
+    "élection", "guerre", "conflit", "événement", "sortie", "lancement"
+]
 
-    if GROQ_API_KEY:
-        try:
-            resp = requests.post(
+def needs_web_search(message):
+    """Vérifie si le message nécessite une recherche web."""
+    msg_lower = message.lower()
+    return any(kw in msg_lower for kw in WEB_SEARCH_KEYWORDS)
+
+def call_ai_with_search(messages, mode="balanced"):
+    """Appel IA avec recherche web Groq si nécessaire."""
+    max_tokens = 4096 if mode == "deep" else (512 if mode == "fast" else 2048)
+    last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+
+    # Détermine si on active la recherche web
+    use_search = needs_web_search(last_user_msg)
+
+    payload = {
+        "model":       GROQ_MODEL,
+        "messages":    messages,
+        "max_tokens":  max_tokens,
+        "temperature": 0.7,
+        "top_p":       0.9,
+    }
+
+    if use_search:
+        payload["tools"] = [{
+            "type": "function",
+            "function": {
+                "name":        "web_search",
+                "description": "Search the web for current information",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query"}
+                    },
+                    "required": ["query"]
+                }
+            }
+        }]
+        payload["tool_choice"] = "auto"
+
+    try:
+        resp = requests.post(
+            GROQ_URL,
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=55
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        if "choices" not in data or not data["choices"]:
+            return "Je n'ai pas pu générer de réponse. Réessaie."
+
+        choice = data["choices"][0]
+        msg    = choice.get("message", {})
+
+        # Si l'IA veut faire une recherche web
+        if choice.get("finish_reason") == "tool_calls" and msg.get("tool_calls"):
+            tool_call = msg["tool_calls"][0]
+            query     = json.loads(tool_call["function"]["arguments"]).get("query", last_user_msg)
+
+            # Recherche via Brave Search API (gratuit) ou DuckDuckGo
+            search_results = do_web_search(query)
+
+            # Deuxième appel avec les résultats
+            messages_with_results = messages + [
+                {"role": "assistant", "content": None, "tool_calls": msg["tool_calls"]},
+                {
+                    "role":         "tool",
+                    "tool_call_id": tool_call["id"],
+                    "content":      search_results
+                }
+            ]
+            resp2 = requests.post(
                 GROQ_URL,
-                headers={
-                    "Authorization": f"Bearer {GROQ_API_KEY}",
-                    "Content-Type":  "application/json"
-                },
-                json={
-                    "model":       GROQ_MODEL,
-                    "messages":    messages,
-                    "max_tokens":  max_tokens,
-                    "temperature": 0.7,
-                    "top_p":       0.9,
-                },
+                headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+                json={"model": GROQ_MODEL, "messages": messages_with_results, "max_tokens": max_tokens, "temperature": 0.7},
                 timeout=55
             )
-            resp.raise_for_status()
-            data = resp.json()
-            # Vérification robuste de la réponse
-            if "choices" in data and len(data["choices"]) > 0:
-                return data["choices"][0]["message"]["content"].strip()
-            elif "error" in data:
-                return f"Erreur Groq: {data['error'].get('message', 'inconnue')}"
-            else:
-                return "Je n'ai pas pu générer de réponse. Réessaie."
-        except requests.exceptions.Timeout:
-            return "La réponse a pris trop de temps. Réessaie avec le mode Rapide."
-        except requests.exceptions.HTTPError as e:
-            return f"Erreur de connexion à l'IA ({e.response.status_code}). Réessaie."
-        except Exception as e:
-            return f"Erreur inattendue: {str(e)}"
+            resp2.raise_for_status()
+            data2 = resp2.json()
+            if "choices" in data2 and data2["choices"]:
+                return data2["choices"][0]["message"]["content"].strip()
+
+        # Réponse directe
+        content = msg.get("content", "")
+        if content:
+            return content.strip()
+        return "Je n'ai pas pu générer de réponse. Réessaie."
+
+    except requests.exceptions.Timeout:
+        return "La réponse a pris trop de temps. Réessaie avec le mode Rapide."
+    except requests.exceptions.HTTPError as e:
+        return f"Erreur de connexion à l'IA ({e.response.status_code}). Réessaie."
+    except Exception as e:
+        return f"Erreur inattendue: {str(e)}"
+
+def do_web_search(query):
+    """Recherche web via DuckDuckGo (sans clé API)."""
+    try:
+        url = f"https://api.duckduckgo.com/?q={requests.utils.quote(query)}&format=json&no_html=1&skip_disambig=1"
+        resp = requests.get(url, timeout=8, headers={"User-Agent": "ZenoIA/1.0"})
+        data = resp.json()
+
+        results = []
+        # Abstract principal
+        if data.get("AbstractText"):
+            results.append(f"Résumé: {data['AbstractText']}")
+        # Résultats RelatedTopics
+        for topic in data.get("RelatedTopics", [])[:4]:
+            if isinstance(topic, dict) and topic.get("Text"):
+                results.append(topic["Text"])
+
+        if results:
+            return "Résultats de recherche pour '" + query + "':\n" + "\n".join(results)
+        return f"Aucun résultat trouvé pour '{query}'. Réponds avec tes connaissances."
+    except Exception as e:
+        return f"Recherche impossible ({str(e)}). Réponds avec tes connaissances."
+
+def call_ai(messages, mode="balanced"):
+    """Appel IA robuste avec recherche web automatique si nécessaire."""
+    if GROQ_API_KEY:
+        return call_ai_with_search(messages, mode)
     else:
         # Fallback Ollama local
+        max_tokens = 4096 if mode == "deep" else (512 if mode == "fast" else 2048)
         prompt_text = ""
         for m in messages:
             if m["role"] == "system":      prompt_text += m["content"] + "\n\n"
@@ -164,12 +259,8 @@ def call_ai(messages, mode="balanced"):
         try:
             resp = requests.post(
                 OLLAMA_URL,
-                json={
-                    "model":   OLLAMA_MODEL,
-                    "prompt":  prompt_text,
-                    "stream":  False,
-                    "options": {"temperature": 0.7, "num_predict": max_tokens}
-                },
+                json={"model": OLLAMA_MODEL, "prompt": prompt_text, "stream": False,
+                      "options": {"temperature": 0.7, "num_predict": max_tokens}},
                 timeout=120
             )
             return resp.json().get("response", "").strip()

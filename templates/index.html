@@ -1814,8 +1814,10 @@ function scrollChat() {
 ═══════════════════════════════════════════ */
 async function deleteChat(e, id) {
   e.stopPropagation();
-  showConfirm('Supprimer cette conversation ?', 'Cette action est irréversible.', async () => {
-    await fetch('/delete/' + id, { method: 'POST' });
+  showConfirm('Supprimer cette conversation ?', 'Cette action est irréversible.', () => {
+    // Suppression visuelle immédiate
+    allConvs = allConvs.filter(c => c.id !== id);
+    renderConvs(allConvs);
     if (currentId === id) {
       currentId = null;
       document.getElementById('msg-wrap').innerHTML = '';
@@ -1823,7 +1825,8 @@ async function deleteChat(e, id) {
       document.getElementById('welcome').style.display = 'flex';
       document.getElementById('chat-header-title').textContent = 'Zeno IA';
     }
-    loadConvs();
+    // Fetch en arrière-plan sans attendre
+    fetch('/delete/' + id, { method: 'POST' }).catch(console.error);
   });
 }
 

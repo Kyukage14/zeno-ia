@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Zeno IA</string>
+    <string name="title_activity_main">Zeno IA</string>
+    <string name="package_name">com.zeno.ia</string>
+    <string name="custom_url_scheme">com.zeno.ia</string>
+</resources>

@@ -177,28 +177,38 @@ def call_ai(messages, mode="balanced"):
             return f"Erreur Ollama: {str(e)}"
 
 def generate_title(user_message, assistant_reply):
-    prompt = f"""Génère un titre TRÈS COURT de 3 à 4 mots maximum (sans ponctuation, sans guillemets, sans emoji) qui résume cette conversation.
-Message: {user_message[:150]}
-Réponse: {assistant_reply[:150]}
-Titre:"""
+    """Génère un titre court de 3-4 mots pour la conversation."""
+    prompt = (
+        "Génère un titre de 3 mots maximum (pas de ponctuation, pas de guillemets) "
+        f"pour cette conversation.\nQuestion: {user_message[:100]}\nTitre:"
+    )
     try:
         if GROQ_API_KEY:
             resp = requests.post(
                 GROQ_URL,
                 headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-                json={"model": GROQ_MODEL, "messages": [{"role": "user", "content": prompt}],
-                      "max_tokens": 15, "temperature": 0.3},
-                timeout=10
+                json={
+                    "model": GROQ_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 12,
+                    "temperature": 0.3,
+                    "stop": ["\n", ".", "!", "?"]
+                },
+                timeout=8
             )
-            resp.raise_for_status()
-            data = resp.json()
-            if "choices" in data:
-                title = data["choices"][0]["message"]["content"].strip()
-                title = title.replace('"','').replace("'",'').replace('\n',' ').strip()
-                return ' '.join(title.split()[:5]) or user_message[:35]
-        return user_message[:35]
+            if resp.status_code == 200:
+                data = resp.json()
+                if "choices" in data and data["choices"]:
+                    title = data["choices"][0]["message"]["content"].strip()
+                    title = title.replace('"','').replace("'",'').replace('\n',' ')
+                    title = ' '.join(title.split()[:4])
+                    if title and len(title) > 2:
+                        return title
     except:
-        return user_message[:35]
+        pass
+    # Fallback: take first 4 words of user message
+    words = user_message.strip().split()
+    return ' '.join(words[:4]) if words else "Conversation"
 
 data = load_data()
 

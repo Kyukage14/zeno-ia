@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, render_template, session, Response, stream_with_context
+from flask_session import Session
 import requests
 import json
 import uuid
@@ -8,17 +9,28 @@ import datetime
 
 app = Flask(__name__)
 
+# ─── SESSION CONFIG ───
+# Stockage des sessions dans des fichiers pour survivre aux redémarrages Render
 _secret = os.environ.get("SECRET_KEY", "zeno-ia-secret-key-2025-fixed-do-not-change")
 app.secret_key = _secret
 app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=90)
-app.config['SESSION_COOKIE_SECURE']   = bool(os.environ.get("RENDER"))
-app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['SESSION_COOKIE_NAME']     = 'zeno_session'
+app.config['SESSION_TYPE']              = 'filesystem'
+app.config['SESSION_FILE_DIR']          = './flask_sessions'
+app.config['SESSION_PERMANENT']         = True
+app.config['SESSION_USE_SIGNER']        = True
+app.config['SESSION_COOKIE_SECURE']     = bool(os.environ.get("RENDER"))
+app.config['SESSION_COOKIE_HTTPONLY']   = True
+app.config['SESSION_COOKIE_SAMESITE']   = 'Lax'
+app.config['SESSION_COOKIE_NAME']       = 'zeno_session'
+app.config['SESSION_COOKIE_DOMAIN']     = None
+
+# Créer le dossier de sessions si nécessaire
+os.makedirs('./flask_sessions', exist_ok=True)
+Session(app)
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL   = "llama3-8b-8192"   # modele plus stable et rapide
+GROQ_MODEL   = "llama3-8b-8192"
 
 OLLAMA_URL   = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "llama3.2"
@@ -48,11 +60,12 @@ TON STYLE :
 - En mode APPROFONDI : analyse exhaustive, exemples multiples.
 
 MODE VOCAL :
-- Réponds naturellement en 2-3 phrases courtes max. Pas de markdown, pas de listes. Parle comme dans une vraie conversation.
+- Réponds naturellement en 2-3 phrases courtes max. Pas de markdown, pas de listes.
 
 RÈGLES :
 - Tu es Zeno de Zeno IA. Tu ne mentionnes jamais Llama, Meta, Groq ou Ollama."""
 
+# ─── DATA HELPERS ───
 def load_data():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r", encoding="utf-8") as f:
@@ -117,7 +130,7 @@ def verify_remember_token(token):
         return None
     return entry.get("email")
 
-# Mots-clés qui indiquent qu'une recherche web est nécessaire
+# ─── AI ───
 WEB_SEARCH_KEYWORDS = [
     "actualité", "actualités", "news", "aujourd'hui", "cette semaine", "ce mois",
     "en ce moment", "dernière", "dernier", "récent", "récente", "nouveauté",
@@ -127,129 +140,78 @@ WEB_SEARCH_KEYWORDS = [
 ]
 
 def needs_web_search(message):
-    """Vérifie si le message nécessite une recherche web."""
     msg_lower = message.lower()
     return any(kw in msg_lower for kw in WEB_SEARCH_KEYWORDS)
 
-def call_ai_with_search(messages, mode="balanced"):
-    """Appel IA avec recherche web Groq si nécessaire."""
-    max_tokens = 4096 if mode == "deep" else (512 if mode == "fast" else 2048)
-    last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-
-    # Détermine si on active la recherche web
-    use_search = needs_web_search(last_user_msg)
-
-    payload = {
-        "model":       GROQ_MODEL,
-        "messages":    messages,
-        "max_tokens":  max_tokens,
-        "temperature": 0.7,
-        "top_p":       0.9,
-    }
-
-    if use_search:
-        payload["tools"] = [{
-            "type": "function",
-            "function": {
-                "name":        "web_search",
-                "description": "Search the web for current information",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "Search query"}
-                    },
-                    "required": ["query"]
-                }
-            }
-        }]
-        payload["tool_choice"] = "auto"
-
-    try:
-        resp = requests.post(
-            GROQ_URL,
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-            json=payload,
-            timeout=55
-        )
-        resp.raise_for_status()
-        data = resp.json()
-
-        if "choices" not in data or not data["choices"]:
-            return "Je n'ai pas pu générer de réponse. Réessaie."
-
-        choice = data["choices"][0]
-        msg    = choice.get("message", {})
-
-        # Si l'IA veut faire une recherche web
-        if choice.get("finish_reason") == "tool_calls" and msg.get("tool_calls"):
-            tool_call = msg["tool_calls"][0]
-            query     = json.loads(tool_call["function"]["arguments"]).get("query", last_user_msg)
-
-            # Recherche via Brave Search API (gratuit) ou DuckDuckGo
-            search_results = do_web_search(query)
-
-            # Deuxième appel avec les résultats
-            messages_with_results = messages + [
-                {"role": "assistant", "content": None, "tool_calls": msg["tool_calls"]},
-                {
-                    "role":         "tool",
-                    "tool_call_id": tool_call["id"],
-                    "content":      search_results
-                }
-            ]
-            resp2 = requests.post(
-                GROQ_URL,
-                headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-                json={"model": GROQ_MODEL, "messages": messages_with_results, "max_tokens": max_tokens, "temperature": 0.7},
-                timeout=55
-            )
-            resp2.raise_for_status()
-            data2 = resp2.json()
-            if "choices" in data2 and data2["choices"]:
-                return data2["choices"][0]["message"]["content"].strip()
-
-        # Réponse directe
-        content = msg.get("content", "")
-        if content:
-            return content.strip()
-        return "Je n'ai pas pu générer de réponse. Réessaie."
-
-    except requests.exceptions.Timeout:
-        return "La réponse a pris trop de temps. Réessaie avec le mode Rapide."
-    except requests.exceptions.HTTPError as e:
-        return f"Erreur de connexion à l'IA ({e.response.status_code}). Réessaie."
-    except Exception as e:
-        return f"Erreur inattendue: {str(e)}"
-
 def do_web_search(query):
-    """Recherche web via DuckDuckGo (sans clé API)."""
     try:
-        url = f"https://api.duckduckgo.com/?q={requests.utils.quote(query)}&format=json&no_html=1&skip_disambig=1"
+        url  = f"https://api.duckduckgo.com/?q={requests.utils.quote(query)}&format=json&no_html=1&skip_disambig=1"
         resp = requests.get(url, timeout=8, headers={"User-Agent": "ZenoIA/1.0"})
         data = resp.json()
-
         results = []
-        # Abstract principal
         if data.get("AbstractText"):
             results.append(f"Résumé: {data['AbstractText']}")
-        # Résultats RelatedTopics
         for topic in data.get("RelatedTopics", [])[:4]:
             if isinstance(topic, dict) and topic.get("Text"):
                 results.append(topic["Text"])
-
         if results:
-            return "Résultats de recherche pour '" + query + "':\n" + "\n".join(results)
-        return f"Aucun résultat trouvé pour '{query}'. Réponds avec tes connaissances."
+            return "Résultats pour '" + query + "':\n" + "\n".join(results)
+        return f"Aucun résultat pour '{query}'."
     except Exception as e:
-        return f"Recherche impossible ({str(e)}). Réponds avec tes connaissances."
+        return f"Recherche impossible: {str(e)}"
 
 def call_ai(messages, mode="balanced"):
-    """Appel IA robuste avec recherche web automatique si nécessaire."""
+    max_tokens = 4096 if mode == "deep" else (512 if mode == "fast" else 2048)
+    last_user  = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+
     if GROQ_API_KEY:
-        return call_ai_with_search(messages, mode)
+        try:
+            payload = {
+                "model": GROQ_MODEL, "messages": messages,
+                "max_tokens": max_tokens, "temperature": 0.7, "top_p": 0.9,
+            }
+            if needs_web_search(last_user):
+                payload["tools"] = [{
+                    "type": "function",
+                    "function": {
+                        "name": "web_search",
+                        "description": "Search the web for current information",
+                        "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
+                    }
+                }]
+                payload["tool_choice"] = "auto"
+
+            resp = requests.post(GROQ_URL,
+                headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+                json=payload, timeout=55)
+            resp.raise_for_status()
+            data   = resp.json()
+            choice = data["choices"][0]
+            msg    = choice.get("message", {})
+
+            if choice.get("finish_reason") == "tool_calls" and msg.get("tool_calls"):
+                tool_call     = msg["tool_calls"][0]
+                query         = json.loads(tool_call["function"]["arguments"]).get("query", last_user)
+                search_results = do_web_search(query)
+                messages2 = messages + [
+                    {"role": "assistant", "content": None, "tool_calls": msg["tool_calls"]},
+                    {"role": "tool", "tool_call_id": tool_call["id"], "content": search_results}
+                ]
+                resp2 = requests.post(GROQ_URL,
+                    headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+                    json={"model": GROQ_MODEL, "messages": messages2, "max_tokens": max_tokens, "temperature": 0.7},
+                    timeout=55)
+                resp2.raise_for_status()
+                return resp2.json()["choices"][0]["message"]["content"].strip()
+
+            content = msg.get("content", "")
+            return content.strip() if content else "Je n'ai pas pu générer de réponse."
+
+        except requests.exceptions.Timeout:
+            return "La réponse a pris trop de temps. Réessaie avec le mode Rapide."
+        except Exception as e:
+            return f"Erreur: {str(e)}"
     else:
-        # Fallback Ollama local
-        max_tokens = 4096 if mode == "deep" else (512 if mode == "fast" else 2048)
         prompt_text = ""
         for m in messages:
             if m["role"] == "system":      prompt_text += m["content"] + "\n\n"
@@ -257,38 +219,28 @@ def call_ai(messages, mode="balanced"):
             elif m["role"] == "assistant": prompt_text += f"Zeno: {m['content']}\n"
         prompt_text += "Zeno:"
         try:
-            resp = requests.post(
-                OLLAMA_URL,
+            resp = requests.post(OLLAMA_URL,
                 json={"model": OLLAMA_MODEL, "prompt": prompt_text, "stream": False,
                       "options": {"temperature": 0.7, "num_predict": max_tokens}},
-                timeout=120
-            )
+                timeout=120)
             return resp.json().get("response", "").strip()
         except Exception as e:
             return f"Erreur Ollama: {str(e)}"
 
 def generate_title(user_message, assistant_reply):
-    """Génère un titre court de 3-4 mots pour la conversation."""
     prompt = (
         "Génère un titre de 3 mots maximum (pas de ponctuation, pas de guillemets) "
         f"pour cette conversation.\nQuestion: {user_message[:100]}\nTitre:"
     )
     try:
         if GROQ_API_KEY:
-            resp = requests.post(
-                GROQ_URL,
+            resp = requests.post(GROQ_URL,
                 headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-                json={
-                    "model": GROQ_MODEL,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 12,
-                    "temperature": 0.3,
-                    "stop": ["\n", ".", "!", "?"]
-                },
-                timeout=8
-            )
+                json={"model": GROQ_MODEL, "messages": [{"role": "user", "content": prompt}],
+                      "max_tokens": 12, "temperature": 0.3, "stop": ["\n", ".", "!", "?"]},
+                timeout=8)
             if resp.status_code == 200:
-                data = resp.json()
+                data  = resp.json()
                 if "choices" in data and data["choices"]:
                     title = data["choices"][0]["message"]["content"].strip()
                     title = title.replace('"','').replace("'",'').replace('\n',' ')
@@ -297,7 +249,6 @@ def generate_title(user_message, assistant_reply):
                         return title
     except:
         pass
-    # Fallback: take first 4 words of user message
     words = user_message.strip().split()
     return ' '.join(words[:4]) if words else "Conversation"
 
@@ -383,9 +334,11 @@ def logout():
 
 @app.route("/me")
 def me():
+    # 1. Session Flask active
     if "email" in session:
         return jsonify({"ok": True, "email": session["email"],
                         "prenom": session.get("prenom",""), "plan": session.get("plan","free")})
+    # 2. Cookie remember_me
     token = request.cookies.get("zeno_remember")
     email = verify_remember_token(token)
     if email:
@@ -412,7 +365,7 @@ def get_conv(cid):
 @app.route("/new", methods=["POST"])
 def new_conv():
     cid = str(uuid.uuid4())[:8]
-    data[cid] = {"title": "Nouvelle conversation", "messages": []}
+    data[cid] = {"title": "Nouvelle conversation", "messages": [], "date": datetime.datetime.now().isoformat()}
     save_data(data)
     return jsonify({"id": cid})
 
@@ -423,13 +376,13 @@ def chat(cid):
     is_voice = request.json.get("voice", False)
 
     if cid not in data:
-        data[cid] = {"title": "Nouvelle conversation", "messages": []}
+        data[cid] = {"title": "Nouvelle conversation", "messages": [], "date": datetime.datetime.now().isoformat()}
 
     conv = data[cid]
     conv["messages"].append({"role": "user", "text": message})
 
     if is_voice:
-        mode_instr = "MODE VOCAL : Réponds en 2-3 phrases max, naturellement. Pas de markdown, pas de listes."
+        mode_instr = "MODE VOCAL : Réponds en 2-3 phrases max, naturellement. Pas de markdown."
     elif mode == "fast":
         mode_instr = "Réponds de façon COURTE et DIRECTE. Maximum 3-4 phrases ou un bloc de code concis."
     elif mode == "deep":
@@ -439,10 +392,7 @@ def chat(cid):
 
     messages = [{"role": "system", "content": ZENO_SYSTEM + f"\n\n{mode_instr}"}]
     for m in conv["messages"][:-1]:
-        messages.append({
-            "role":    "user" if m["role"] == "user" else "assistant",
-            "content": m["text"]
-        })
+        messages.append({"role": "user" if m["role"] == "user" else "assistant", "content": m["text"]})
     messages.append({"role": "user", "content": message})
 
     reply = call_ai(messages, mode)

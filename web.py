@@ -166,43 +166,46 @@ def call_ai(messages, mode="balanced"):
 
     if GROQ_API_KEY:
         try:
+            # Inject web search results directly into system prompt if needed
+            msgs_to_send = list(messages)
+            if needs_web_search(last_user):
+                search_results = do_web_search(last_user)
+                if msgs_to_send and msgs_to_send[0]["role"] == "system":
+                    msgs_to_send[0] = dict(msgs_to_send[0])
+                    msgs_to_send[0]["content"] += f"\n\nRésultats de recherche web actuels:\n{search_results}"
+
             payload = {
-                "model": GROQ_MODEL, "messages": messages,
+                "model": GROQ_MODEL, "messages": msgs_to_send,
                 "max_tokens": max_tokens, "temperature": 0.7, "top_p": 0.9,
             }
-            if needs_web_search(last_user):
-                payload["tools"] = [{
-                    "type": "function",
-                    "function": {
-                        "name": "web_search",
-                        "description": "Search the web for current information",
-                        "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
-                    }
-                }]
-                payload["tool_choice"] = "auto"
 
             resp = requests.post(GROQ_URL,
                 headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
                 json=payload, timeout=55)
             resp.raise_for_status()
             data   = resp.json()
+            if "choices" not in data or not data["choices"]:
+                return "Je n'ai pas pu générer de réponse. Réessaie."
             choice = data["choices"][0]
             msg    = choice.get("message", {})
 
             if choice.get("finish_reason") == "tool_calls" and msg.get("tool_calls"):
-                tool_call     = msg["tool_calls"][0]
-                query         = json.loads(tool_call["function"]["arguments"]).get("query", last_user)
+                tool_call      = msg["tool_calls"][0]
+                query          = json.loads(tool_call["function"]["arguments"]).get("query", last_user)
                 search_results = do_web_search(query)
-                messages2 = messages + [
-                    {"role": "assistant", "content": None, "tool_calls": msg["tool_calls"]},
-                    {"role": "tool", "tool_call_id": tool_call["id"], "content": search_results}
-                ]
+                # Rebuild messages with search results injected into system prompt
+                # instead of tool_calls format to avoid Groq 400 errors
+                messages2 = list(messages)
+                messages2[0]["content"] += f"\n\nRésultats de recherche web:\n{search_results}"
                 resp2 = requests.post(GROQ_URL,
                     headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
                     json={"model": GROQ_MODEL, "messages": messages2, "max_tokens": max_tokens, "temperature": 0.7},
                     timeout=55)
                 resp2.raise_for_status()
-                return resp2.json()["choices"][0]["message"]["content"].strip()
+                data2 = resp2.json()
+                if "choices" in data2 and data2["choices"]:
+                    return data2["choices"][0]["message"]["content"].strip()
+                return "Je n'ai pas pu obtenir de réponse."
 
             content = msg.get("content", "")
             return content.strip() if content else "Je n'ai pas pu générer de réponse."

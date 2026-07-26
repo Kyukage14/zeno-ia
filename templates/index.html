@@ -139,6 +139,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Inter', sans-serif; b
 }
 
 .conv-item:hover { background: rgba(255,255,255,.04); }
+.conv-item { transition: background .15s, transform .1s; }
 .conv-item.active { background: rgba(108,99,255,.12); }
 
 .conv-item-title {
@@ -401,7 +402,8 @@ html, body { height: 100%; overflow: hidden; font-family: 'Inter', sans-serif; b
 
 .msg-wrap { max-width: 760px; margin: 0 auto; padding: 0 28px; display: flex; flex-direction: column; gap: 24px; }
 
-.message { display: flex; gap: 14px; align-items: flex-start; }
+.message { display: flex; gap: 14px; align-items: flex-start; animation: msgAppear .3s ease; }
+@keyframes msgAppear { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
 
 .msg-avatar {
   width: 34px; height: 34px;
@@ -422,6 +424,8 @@ html, body { height: 100%; overflow: hidden; font-family: 'Inter', sans-serif; b
 .msg-sender { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; letter-spacing: .04em; text-transform: uppercase; }
 
 .msg-bubble { font-size: 14px; line-height: 1.75; color: var(--white); }
+.msg-bubble.streaming::after { content: '▋'; animation: blink .7s infinite; color: var(--violet); font-size: 16px; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
 
 .message.user .msg-bubble {
   background: rgba(108,99,255,.1);
@@ -1632,19 +1636,51 @@ async function loadConvs() {
   renderConvs(allConvs);
 }
 
+function formatDateLabel(dateStr) {
+  if (!dateStr) return 'Anciennes';
+  const d     = new Date(dateStr);
+  const now   = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const convD = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diff  = Math.floor((today - convD) / 86400000);
+  if (diff === 0) return "Aujourd'hui";
+  if (diff === 1) return 'Hier';
+  if (diff < 7)   return 'Cette semaine';
+  if (diff < 30)  return 'Ce mois-ci';
+  return d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+}
+
 function renderConvs(list) {
   const el = document.getElementById('list');
   if (!el) return;
   el.innerHTML = '';
+
+  // Group by date label
+  const groups = {};
+  const order  = [];
   list.forEach(conv => {
-    const div = document.createElement('div');
-    div.className = 'conv-item' + (conv.id === currentId ? ' active' : '');
-    div.innerHTML = `
-      <span class="conv-item-title">${escHtml(conv.title)}</span>
-      <button class="conv-delete" onclick="deleteChat(event,'${conv.id}')" title="Supprimer">✕</button>
-    `;
-    div.onclick = () => openChat(conv.id);
-    el.appendChild(div);
+    const label = formatDateLabel(conv.date);
+    if (!groups[label]) { groups[label] = []; order.push(label); }
+    groups[label].push(conv);
+  });
+
+  order.forEach(label => {
+    // Date header
+    const header = document.createElement('div');
+    header.style.cssText = 'font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#4a506e;padding:10px 12px 4px;';
+    header.textContent = label;
+    el.appendChild(header);
+
+    groups[label].forEach(conv => {
+      const div = document.createElement('div');
+      div.className = 'conv-item' + (conv.id === currentId ? ' active' : '');
+      div.innerHTML = `
+        <span class="conv-item-title">${escHtml(conv.title)}</span>
+        <button class="conv-delete" onclick="deleteChat(event,'${conv.id}')" title="Supprimer">✕</button>
+      `;
+      div.onclick = () => openChat(conv.id);
+      el.appendChild(div);
+    });
   });
 }
 
@@ -1692,7 +1728,7 @@ async function openChat(id) {
 }
 
 /* ═══════════════════════════════════════════
-   SEND MESSAGE
+   SEND MESSAGE (STREAMING)
 ═══════════════════════════════════════════ */
 async function send() {
   const input = document.getElementById('msg');
@@ -1700,7 +1736,7 @@ async function send() {
   if (!msg && pendingAttachments.length === 0) return;
 
   if (!currentId) {
-    const r = await fetch('/new', { method: 'POST' });
+    const r = await fetch('https://zeno-ia.onrender.com/new', { method: 'POST' });
     const d = await r.json();
     currentId = d.id;
     await loadConvs();
@@ -1728,26 +1764,87 @@ async function send() {
   scrollChat();
 
   const mode = document.getElementById('mode').value;
+
+  // Bloc réponse IA vide pour le streaming
+  const wrap     = document.getElementById('msg-wrap');
+  const aiDiv    = document.createElement('div');
+  aiDiv.className = 'message assistant';
+  const bubbleId  = 'bubble-' + Date.now();
+  aiDiv.innerHTML = '<div class="msg-avatar ai">' + zenoLogoSVG() + '</div>'
+    + '<div class="msg-body"><div class="msg-sender">Zeno</div>'
+    + '<div class="msg-bubble" id="' + bubbleId + '"></div></div>';
+  aiDiv.style.display = 'none';
+  wrap.appendChild(aiDiv);
+
+  let streamedText = '';
+
   try {
-    const res  = await fetch('/chat/' + currentId, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    const res = await fetch('https://zeno-ia.onrender.com/chat/' + currentId, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: fullMessage, mode })
     });
+
     if (!res.ok) throw new Error('Erreur serveur ' + res.status);
-    const data = await res.json();
-    document.getElementById('thinking').style.display = 'none';
-    addMsg('assistant', data.response);
-    if (data.title) {
-      await loadConvs();
-      document.getElementById('chat-header-title').textContent = data.title;
+
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let   buffer  = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const payload = JSON.parse(line.slice(6));
+          if (payload.token !== undefined) {
+            if (streamedText === '') {
+              document.getElementById('thinking').style.display = 'none';
+              aiDiv.style.display = 'flex';
+            }
+            streamedText += payload.token;
+            const bubbleEl = document.getElementById(bubbleId);
+            if (bubbleEl) { bubbleEl.innerHTML = formatMessage(streamedText); bubbleEl.classList.add('streaming'); }
+            scrollChat();
+          }
+          if (payload.done) {
+            document.getElementById('thinking').style.display = 'none';
+            const bEl = document.getElementById(bubbleId); if(bEl) bEl.classList.remove('streaming');
+            aiDiv.querySelectorAll('pre').forEach(pre => {
+              if (!pre.querySelector('.copy-code-btn')) {
+                const btn = document.createElement('button');
+                btn.className   = 'copy-code-btn';
+                btn.textContent = 'Copier';
+                btn.onclick = () => {
+                  navigator.clipboard.writeText(pre.textContent.replace('Copier','').trim());
+                  btn.textContent = 'Copié !';
+                  setTimeout(() => btn.textContent = 'Copier', 2000);
+                };
+                pre.style.position = 'relative';
+                pre.appendChild(btn);
+              }
+            });
+            if (payload.title) {
+              await loadConvs();
+              document.getElementById('chat-header-title').textContent = payload.title;
+            }
+          }
+        } catch(e) {}
+      }
     }
   } catch(e) {
     document.getElementById('thinking').style.display = 'none';
-    addMsg('assistant', 'Désolé, je ne peux pas répondre pour le moment. Réessaie dans quelques secondes.');
+    const bubbleEl = document.getElementById(bubbleId);
+    if (bubbleEl) bubbleEl.innerHTML = 'Désolé, je ne peux pas répondre pour le moment. Réessaie.';
+    aiDiv.style.display = 'flex';
     console.error('Send error:', e);
   }
 }
-
 document.getElementById('msg').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
@@ -2713,7 +2810,7 @@ init();
                 <span style="font-size:20px;font-weight:700;color:#f0f4ff;">12€<span style="font-size:13px;font-weight:400;color:#6b7299;">/mois</span></span>
                 <span style="background:linear-gradient(135deg,#6c63ff,#00d4ff);color:#fff;font-size:10px;font-weight:700;padding:2px 10px;border-radius:100px;letter-spacing:.04em;">POPULAIRE</span>
               </div>
-              <div style="font-size:13px;color:#6b7299;line-height:1.6;">Messages illimités · Tous les modes · Mémoire longue · Support prioritaire</div>
+              <div style="font-size:13px;color:#6b7299;line-height:1.6;">Messages illimités · Tous les modes · Appels vocaux illimités · Génération d'images illimitée · Historique illimité · Support prioritaire 24h</div>
             </div>
             <div id="btn-pro" class="plan-select-btn filled" onclick="selectPlan('pro')">Choisir Pro</div>
           </div>
@@ -2725,7 +2822,7 @@ init();
                 <span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px;color:#f0f4ff;">Expert</span>
                 <span style="font-size:20px;font-weight:700;color:#f0f4ff;">29€<span style="font-size:13px;font-weight:400;color:#6b7299;">/mois</span></span>
               </div>
-              <div style="font-size:13px;color:#6b7299;line-height:1.6;">Tout du Pro · API · Personnalité sur mesure · Tableau de bord · Support 24/7</div>
+              <div style="font-size:13px;color:#6b7299;line-height:1.6;">Tout du Pro · Accès API Zeno · Personnalité IA sur mesure · Tableau de bord analytique · Modèle IA le plus puissant · Support dédié 24/7 · Accès bêta aux nouvelles fonctionnalités</div>
             </div>
             <div id="btn-expert" class="plan-select-btn filled" onclick="selectPlan('expert')">Choisir Expert</div>
           </div>

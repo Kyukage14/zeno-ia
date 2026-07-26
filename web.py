@@ -359,7 +359,10 @@ def me():
 # ─── CONVERSATIONS ───
 @app.route("/conversations")
 def conversations():
-    return jsonify({"conversations": [{"id": cid, "title": data[cid]["title"]} for cid in data]})
+    return jsonify({"conversations": [
+        {"id": cid, "title": data[cid]["title"], "date": data[cid].get("date", "")}
+        for cid in data
+    ]})
 
 @app.route("/conversation/<cid>")
 def get_conv(cid):
@@ -371,6 +374,61 @@ def new_conv():
     data[cid] = {"title": "Nouvelle conversation", "messages": [], "date": datetime.datetime.now().isoformat()}
     save_data(data)
     return jsonify({"id": cid})
+
+def stream_groq(messages, mode="balanced"):
+    """Stream depuis Groq token par token."""
+    max_tokens = 4096 if mode == "deep" else (512 if mode == "fast" else 2048)
+    resp = requests.post(
+        GROQ_URL,
+        headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+        json={"model": GROQ_MODEL, "messages": messages, "max_tokens": max_tokens,
+              "temperature": 0.7, "stream": True},
+        stream=True, timeout=60
+    )
+    full_reply = ""
+    for line in resp.iter_lines():
+        if line:
+            line_str = line.decode("utf-8")
+            if line_str.startswith("data: "): line_str = line_str[6:]
+            if line_str == "[DONE]":
+                yield full_reply, True
+                return
+            try:
+                chunk = json.loads(line_str)
+                token = chunk["choices"][0]["delta"].get("content", "")
+                if token:
+                    full_reply += token
+                    yield token, False
+            except: continue
+    yield full_reply, True
+
+def stream_ollama(messages, mode="balanced"):
+    """Stream depuis Ollama token par token."""
+    max_tokens = 4096 if mode == "deep" else (512 if mode == "fast" else 2048)
+    prompt_text = ""
+    for m in messages:
+        if m["role"] == "system":      prompt_text += m["content"] + "\n\n"
+        elif m["role"] == "user":      prompt_text += f"Utilisateur: {m['content']}\n"
+        elif m["role"] == "assistant": prompt_text += f"Zeno: {m['content']}\n"
+    prompt_text += "Zeno:"
+    resp = requests.post(OLLAMA_URL,
+        json={"model": OLLAMA_MODEL, "prompt": prompt_text, "stream": True,
+              "options": {"temperature": 0.7, "num_predict": max_tokens}},
+        stream=True, timeout=120)
+    full_reply = ""
+    for line in resp.iter_lines():
+        if line:
+            try:
+                chunk = json.loads(line.decode("utf-8"))
+                token = chunk.get("response", "")
+                if token:
+                    full_reply += token
+                    yield token, False
+                if chunk.get("done"):
+                    yield full_reply, True
+                    return
+            except: continue
+    yield full_reply, True
 
 @app.route("/chat/<cid>", methods=["POST"])
 def chat(cid):
@@ -393,19 +451,52 @@ def chat(cid):
     else:
         mode_instr = "Réponse complète et claire, sans longueur inutile."
 
-    messages = [{"role": "system", "content": ZENO_SYSTEM + f"\n\n{mode_instr}"}]
+    # Inject web search if needed
+    msgs_to_send = list(messages if False else [])
+    base_messages = [{"role": "system", "content": ZENO_SYSTEM + f"\n\n{mode_instr}"}]
     for m in conv["messages"][:-1]:
-        messages.append({"role": "user" if m["role"] == "user" else "assistant", "content": m["text"]})
-    messages.append({"role": "user", "content": message})
+        base_messages.append({"role": "user" if m["role"] == "user" else "assistant", "content": m["text"]})
+    base_messages.append({"role": "user", "content": message})
 
-    reply = call_ai(messages, mode)
+    if needs_web_search(message):
+        search_results = do_web_search(message)
+        base_messages[0] = dict(base_messages[0])
+        base_messages[0]["content"] += f"\n\nRésultats de recherche web actuels:\n{search_results}"
 
-    conv["messages"].append({"role": "assistant", "text": reply})
-    if len(conv["messages"]) == 2:
-        conv["title"] = generate_title(message, reply)
-    save_data(data)
+    # Voice: non-streaming
+    if is_voice:
+        reply = call_ai(base_messages, mode)
+        conv["messages"].append({"role": "assistant", "text": reply})
+        if len(conv["messages"]) == 2:
+            conv["title"] = generate_title(message, reply)
+        save_data(data)
+        return jsonify({"response": reply, "title": conv["title"]})
 
-    return jsonify({"response": reply, "title": conv["title"]})
+    # Text: streaming SSE
+    def generate():
+        full_reply = ""
+        try:
+            streamer = stream_groq(base_messages, mode) if GROQ_API_KEY else stream_ollama(base_messages, mode)
+            for token, is_done in streamer:
+                if not is_done:
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+                else:
+                    full_reply = token
+            conv["messages"].append({"role": "assistant", "text": full_reply})
+            if len(conv["messages"]) == 2:
+                conv["title"] = generate_title(message, full_reply)
+            save_data(data)
+            yield f"data: {json.dumps({'done': True, 'title': conv['title']})}\n\n"
+        except Exception as e:
+            error_msg = f"Erreur: {str(e)}"
+            yield f"data: {json.dumps({'token': error_msg})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'title': conv.get('title', 'Conversation')})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )
 
 @app.route("/delete/<cid>", methods=["POST"])
 def delete(cid):

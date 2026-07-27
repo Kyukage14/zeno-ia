@@ -458,13 +458,18 @@ def chat(cid):
         base_messages.append({"role": "user" if m["role"] == "user" else "assistant", "content": m["text"]})
     base_messages.append({"role": "user", "content": message})
 
-    if needs_web_search(message):
-        search_results = do_web_search(message)
-        base_messages[0] = dict(base_messages[0])
-        base_messages[0]["content"] += f"\n\nRésultats de recherche web actuels:\n{search_results}"
+    # Recherche web sur toutes les questions (sauf code pur et questions très courtes)
+    if len(message.strip()) > 12 and not message.strip().startswith("```"):
+        search_results = do_web_search(message[:200])
+        if search_results and "Aucun résultat" not in search_results and "impossible" not in search_results.lower():
+            base_messages[0] = dict(base_messages[0])
+            base_messages[0]["content"] += f"\n\nInformations web actuelles (utilise-les si pertinentes pour répondre):\n{search_results}"
 
-    # Voice: non-streaming
-    if is_voice:
+    # No-stream fallback (called when SSE fails on client)
+    no_stream = request.json.get("no_stream", False)
+
+    # Voice or no_stream: non-streaming
+    if is_voice or no_stream:
         reply = call_ai(base_messages, mode)
         conv["messages"].append({"role": "assistant", "text": reply})
         if len(conv["messages"]) == 2:

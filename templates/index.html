@@ -1829,8 +1829,9 @@ async function send() {
                 pre.appendChild(btn);
               }
             });
+            // Toujours recharger sidebar après réponse
+            await loadConvs();
             if (payload.title) {
-              await loadConvs();
               document.getElementById('chat-header-title').textContent = payload.title;
             }
           }
@@ -1838,11 +1839,32 @@ async function send() {
       }
     }
   } catch(e) {
-    document.getElementById('thinking').style.display = 'none';
-    const bubbleEl = document.getElementById(bubbleId);
-    if (bubbleEl) bubbleEl.innerHTML = 'Désolé, je ne peux pas répondre pour le moment. Réessaie.';
-    aiDiv.style.display = 'flex';
-    console.error('Send error:', e);
+    console.error('Streaming failed, trying fallback:', e);
+    // Fallback non-streaming
+    try {
+      const res2 = await fetch('https://zeno-ia.onrender.com/chat/' + currentId, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: fullMessage, mode, no_stream: true })
+      });
+      const data2 = await res2.json();
+      document.getElementById('thinking').style.display = 'none';
+      const bubbleEl = document.getElementById(bubbleId);
+      if (bubbleEl) {
+        bubbleEl.innerHTML = formatMessage(data2.response || 'Erreur de réponse.');
+        bubbleEl.classList.remove('streaming');
+      }
+      aiDiv.style.display = 'flex';
+      if (data2.title) {
+        await loadConvs();
+        document.getElementById('chat-header-title').textContent = data2.title;
+      }
+    } catch(e2) {
+      document.getElementById('thinking').style.display = 'none';
+      const bubbleEl = document.getElementById(bubbleId);
+      if (bubbleEl) bubbleEl.innerHTML = 'Désolé, je ne peux pas répondre. Vérifie ta connexion.';
+      aiDiv.style.display = 'flex';
+    }
   }
 }
 document.getElementById('msg').addEventListener('keydown', e => {

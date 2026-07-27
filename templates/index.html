@@ -1933,10 +1933,12 @@ function scrollChat() {
 ═══════════════════════════════════════════ */
 async function deleteChat(e, id) {
   e.stopPropagation();
-  showConfirm('Supprimer cette conversation ?', 'Cette action est irréversible.', () => {
-    // Suppression visuelle immédiate
-    allConvs = allConvs.filter(c => c.id !== id);
+  showConfirm('Supprimer cette conversation ?', 'Cette action est irréversible.', async () => {
+    // 1. Supprime visuellement IMMÉDIATEMENT et de façon définitive
+    allConvs = allConvs.filter(conv => conv.id !== id);
     renderConvs(allConvs);
+
+    // 2. Si c'était la conv active, retour à l'accueil
     if (currentId === id) {
       currentId = null;
       document.getElementById('msg-wrap').innerHTML = '';
@@ -1944,11 +1946,13 @@ async function deleteChat(e, id) {
       document.getElementById('welcome').style.display = 'flex';
       document.getElementById('chat-header-title').textContent = 'Zeno IA';
     }
-    // Fetch en arrière-plan sans attendre
-    fetch('/delete/' + id, { method: 'POST' }).catch(console.error);
+
+    // 3. Supprime côté serveur en arrière-plan
+    // NE PAS recharger depuis le serveur après — la liste locale est déjà correcte
+    fetch('https://zeno-ia.onrender.com/delete/' + id, { method: 'POST' })
+      .catch(err => console.error('Delete error:', err));
   });
 }
-
 function showConfirm(title, subtitle, onConfirm) {
   const existing = document.getElementById('confirm-overlay');
   if (existing) existing.remove();

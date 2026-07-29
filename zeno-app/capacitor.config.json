@@ -5,8 +5,12 @@
   "server": {
     "androidScheme": "https",
     "allowNavigation": [
-      "zeno-ia.onrender.com"
-    ]
+      "zeno-ia.onrender.com",
+      "*.onrender.com",
+      "image.pollinations.ai",
+      "api.duckduckgo.com"
+    ],
+    "cleartext": true
   },
   "plugins": {
     "StatusBar": {

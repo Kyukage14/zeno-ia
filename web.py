@@ -144,21 +144,38 @@ def needs_web_search(message):
     return any(kw in msg_lower for kw in WEB_SEARCH_KEYWORDS)
 
 def do_web_search(query):
+    """Recherche via DuckDuckGo avec timeout court pour ne pas bloquer."""
     try:
-        url  = f"https://api.duckduckgo.com/?q={requests.utils.quote(query)}&format=json&no_html=1&skip_disambig=1"
-        resp = requests.get(url, timeout=8, headers={"User-Agent": "ZenoIA/1.0"})
+        # DuckDuckGo Instant Answer API
+        url  = f"https://api.duckduckgo.com/?q={requests.utils.quote(query)}&format=json&no_html=1&skip_disambig=1&t=ZenoIA"
+        resp = requests.get(url, timeout=4, headers={"User-Agent": "Mozilla/5.0 ZenoIA/1.0"})
         data = resp.json()
         results = []
+
+        # Abstract (résumé principal)
         if data.get("AbstractText"):
-            results.append(f"Résumé: {data['AbstractText']}")
-        for topic in data.get("RelatedTopics", [])[:4]:
+            results.append(data["AbstractText"])
+
+        # Answer direct (ex: age d'une personne)
+        if data.get("Answer"):
+            results.append(f"Réponse directe: {data['Answer']}")
+
+        # Infobox (données structurées)
+        if data.get("Infobox") and data["Infobox"].get("content"):
+            for item in data["Infobox"]["content"][:3]:
+                if item.get("label") and item.get("value"):
+                    results.append(f"{item['label']}: {item['value']}")
+
+        # Related topics
+        for topic in data.get("RelatedTopics", [])[:3]:
             if isinstance(topic, dict) and topic.get("Text"):
                 results.append(topic["Text"])
+
         if results:
-            return "Résultats pour '" + query + "':\n" + "\n".join(results)
-        return f"Aucun résultat pour '{query}'."
-    except Exception as e:
-        return f"Recherche impossible: {str(e)}"
+            return "\n".join(results[:5])
+        return ""  # Retourne vide si rien trouvé (pas d'erreur)
+    except Exception:
+        return ""  # Silencieux en cas d'erreur
 
 def call_ai(messages, mode="balanced"):
     max_tokens = 4096 if mode == "deep" else (512 if mode == "fast" else 2048)
@@ -383,8 +400,9 @@ def stream_groq(messages, mode="balanced"):
         headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
         json={"model": GROQ_MODEL, "messages": messages, "max_tokens": max_tokens,
               "temperature": 0.7, "stream": True},
-        stream=True, timeout=60
+        stream=True, timeout=90
     )
+    resp.raise_for_status()
     full_reply = ""
     for line in resp.iter_lines():
         if line:

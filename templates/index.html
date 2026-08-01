@@ -1503,6 +1503,7 @@ let sidebarOpen  = true;
 let currentUser  = null;
 let currentTheme = 'dark';
 let pendingAttachments = [];
+let deletedIds = new Set(); // IDs supprimés localement
 let pendingTheme    = localStorage.getItem('zeno-theme') || 'dark';
 let pendingFontSize = localStorage.getItem('zeno-fontsize') || 'md';
 
@@ -1528,7 +1529,7 @@ async function init() {
 ═══════════════════════════════════════════ */
 async function loadUser() {
   try {
-    const res  = await fetch('/me');
+    const res  = await fetch('https://zeno-ia.onrender.com/me');
     if (!res.ok) { window.location.replace('/'); return; }
     const data = await res.json();
     if (!data.ok) { window.location.replace('/'); return; }
@@ -1536,7 +1537,7 @@ async function loadUser() {
     applyUserUI(data);
   } catch(e) {
     try {
-      const res2  = await fetch('/me');
+      const res2  = await fetch('https://zeno-ia.onrender.com/me');
       const data2 = await res2.json();
       if (!data2.ok) { window.location.replace('/'); return; }
       currentUser = data2;
@@ -1630,10 +1631,15 @@ window.addEventListener('resize', function() {
    CONVERSATIONS
 ═══════════════════════════════════════════ */
 async function loadConvs() {
-  const res  = await fetch('/conversations');
-  const data = await res.json();
-  allConvs   = data.conversations;
-  renderConvs(allConvs);
+  try {
+    const res  = await fetch('https://zeno-ia.onrender.com/conversations');
+    const data = await res.json();
+    // Filtre les IDs supprimés localement pour éviter qu'ils réapparaissent
+    allConvs = data.conversations.filter(conv => !deletedIds.has(conv.id));
+    renderConvs(allConvs);
+  } catch(e) {
+    console.error('loadConvs error:', e);
+  }
 }
 
 function formatDateLabel(dateStr) {
@@ -1690,7 +1696,7 @@ function filterConvs(q) {
 }
 
 async function newChat() {
-  const res = await fetch('/new', { method: 'POST' });
+  const res = await fetch('https://zeno-ia.onrender.com/new', { method: 'POST' });
   const d   = await res.json();
   currentId = d.id;
   document.getElementById('msg-wrap').innerHTML = '';
@@ -1710,7 +1716,7 @@ async function newChat() {
 
 async function openChat(id) {
   currentId = id;
-  const res  = await fetch('/conversation/' + id);
+  const res  = await fetch('https://zeno-ia.onrender.com/conversation/' + id);
   const data = await res.json();
   document.getElementById('msg-wrap').innerHTML    = '';
   document.getElementById('welcome').style.display = 'none';
@@ -1777,15 +1783,42 @@ async function send() {
   wrap.appendChild(aiDiv);
 
   let streamedText = '';
+  let gotFirstToken = false;
+  let streamTimeout = null;
+
+  async function doFallback() {
+    try {
+      document.getElementById('thinking').style.display = 'block';
+      aiDiv.style.display = 'none';
+      const r2   = await fetch('https://zeno-ia.onrender.com/chat/' + currentId, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: fullMessage, mode, no_stream: true })
+      });
+      const d2 = await r2.json();
+      document.getElementById('thinking').style.display = 'none';
+      const bEl2 = document.getElementById(bubbleId);
+      if (bEl2) { bEl2.innerHTML = formatMessage(d2.response || 'Pas de réponse.'); bEl2.classList.remove('streaming'); }
+      aiDiv.style.display = 'flex';
+      scrollChat();
+      await loadConvs();
+      if (d2.title) document.getElementById('chat-header-title').textContent = d2.title;
+    } catch(e2) {
+      document.getElementById('thinking').style.display = 'none';
+      const bEl2 = document.getElementById(bubbleId);
+      if (bEl2) bEl2.innerHTML = 'Désolé, je ne peux pas répondre. Réessaie.';
+      aiDiv.style.display = 'flex';
+    }
+  }
 
   try {
     const res = await fetch('https://zeno-ia.onrender.com/chat/' + currentId, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: fullMessage, mode })
     });
 
-    if (!res.ok) throw new Error('Erreur serveur ' + res.status);
+    if (!res.ok) { await doFallback(); return; }
+
+    streamTimeout = setTimeout(() => { if (!gotFirstToken) doFallback(); }, 30000);
 
     const reader  = res.body.getReader();
     const decoder = new TextDecoder();
@@ -1802,69 +1835,42 @@ async function send() {
         if (!line.startsWith('data: ')) continue;
         try {
           const payload = JSON.parse(line.slice(6));
+
           if (payload.token !== undefined) {
-            if (streamedText === '') {
+            if (!gotFirstToken) {
+              gotFirstToken = true;
+              clearTimeout(streamTimeout);
               document.getElementById('thinking').style.display = 'none';
               aiDiv.style.display = 'flex';
             }
             streamedText += payload.token;
-            const bubbleEl = document.getElementById(bubbleId);
-            if (bubbleEl) { bubbleEl.innerHTML = formatMessage(streamedText); bubbleEl.classList.add('streaming'); }
+            const bEl = document.getElementById(bubbleId);
+            if (bEl) { bEl.innerHTML = formatMessage(streamedText); bEl.classList.add('streaming'); }
             scrollChat();
           }
+
           if (payload.done) {
+            clearTimeout(streamTimeout);
             document.getElementById('thinking').style.display = 'none';
-            const bEl = document.getElementById(bubbleId); if(bEl) bEl.classList.remove('streaming');
+            const bEl = document.getElementById(bubbleId);
+            if (bEl) bEl.classList.remove('streaming');
             aiDiv.querySelectorAll('pre').forEach(pre => {
               if (!pre.querySelector('.copy-code-btn')) {
                 const btn = document.createElement('button');
-                btn.className   = 'copy-code-btn';
-                btn.textContent = 'Copier';
-                btn.onclick = () => {
-                  navigator.clipboard.writeText(pre.textContent.replace('Copier','').trim());
-                  btn.textContent = 'Copié !';
-                  setTimeout(() => btn.textContent = 'Copier', 2000);
-                };
-                pre.style.position = 'relative';
-                pre.appendChild(btn);
+                btn.className = 'copy-code-btn'; btn.textContent = 'Copier';
+                btn.onclick = () => { navigator.clipboard.writeText(pre.textContent.replace('Copier','').trim()); btn.textContent = 'Copié !'; setTimeout(() => btn.textContent = 'Copier', 2000); };
+                pre.style.position = 'relative'; pre.appendChild(btn);
               }
             });
-            // Toujours recharger sidebar après réponse
             await loadConvs();
-            if (payload.title) {
-              document.getElementById('chat-header-title').textContent = payload.title;
-            }
+            if (payload.title) document.getElementById('chat-header-title').textContent = payload.title;
           }
         } catch(e) {}
       }
     }
   } catch(e) {
-    console.error('Streaming failed, trying fallback:', e);
-    // Fallback non-streaming
-    try {
-      const res2 = await fetch('https://zeno-ia.onrender.com/chat/' + currentId, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: fullMessage, mode, no_stream: true })
-      });
-      const data2 = await res2.json();
-      document.getElementById('thinking').style.display = 'none';
-      const bubbleEl = document.getElementById(bubbleId);
-      if (bubbleEl) {
-        bubbleEl.innerHTML = formatMessage(data2.response || 'Erreur de réponse.');
-        bubbleEl.classList.remove('streaming');
-      }
-      aiDiv.style.display = 'flex';
-      if (data2.title) {
-        await loadConvs();
-        document.getElementById('chat-header-title').textContent = data2.title;
-      }
-    } catch(e2) {
-      document.getElementById('thinking').style.display = 'none';
-      const bubbleEl = document.getElementById(bubbleId);
-      if (bubbleEl) bubbleEl.innerHTML = 'Désolé, je ne peux pas répondre. Vérifie ta connexion.';
-      aiDiv.style.display = 'flex';
-    }
+    clearTimeout(streamTimeout);
+    if (!gotFirstToken) { console.error('Streaming failed, fallback:', e); await doFallback(); }
   }
 }
 document.getElementById('msg').addEventListener('keydown', e => {
@@ -1935,6 +1941,7 @@ async function deleteChat(e, id) {
   e.stopPropagation();
   showConfirm('Supprimer cette conversation ?', 'Cette action est irréversible.', async () => {
     // 1. Supprime visuellement IMMÉDIATEMENT et de façon définitive
+    deletedIds.add(id); // Marque comme supprimé avant tout rechargement
     allConvs = allConvs.filter(conv => conv.id !== id);
     renderConvs(allConvs);
 
@@ -1988,7 +1995,7 @@ function toggleAccount() {
 
 function doLogout() {
   showConfirm('Se déconnecter ?', 'Tu devras te reconnecter pour accéder à Zeno.', async () => {
-    await fetch('/logout', { method: 'POST' });
+    await fetch('https://zeno-ia.onrender.com/logout', { method: 'POST' });
     window.location.replace('/');
   });
 }
@@ -2092,7 +2099,7 @@ async function generateImage() {
   document.getElementById('gen-prompt').value = '';
 
   if (!currentId) {
-    const r = await fetch('/new', { method: 'POST' });
+    const r = await fetch('https://zeno-ia.onrender.com/new', { method: 'POST' });
     const d = await r.json();
     currentId = d.id;
     await loadConvs();
@@ -2375,7 +2382,7 @@ function openVoiceCall() {
   startWaveIdle();
   setVoiceStatus('idle', 'Appuie sur le micro pour parler');
   if (synth) synth.getVoices();
-  fetch('/new', { method: 'POST' })
+  fetch('https://zeno-ia.onrender.com/new', { method: 'POST' })
     .then(r => r.json())
     .then(d => { voiceConvId = d.id; })
     .catch(() => { voiceConvId = currentId; });
@@ -2500,7 +2507,7 @@ function stopListening() {
 /* ── SEND ── */
 async function sendVoiceMessage(text) {
   if (!voiceConvId) {
-    try { const r = await fetch('/new',{method:'POST'}); const d = await r.json(); voiceConvId = d.id; }
+    try { const r = await fetch('https://zeno-ia.onrender.com/new',{method:'POST'}); const d = await r.json(); voiceConvId = d.id; }
     catch(e) { setVoiceStatus('idle','Pas de connexion'); return; }
   }
   isSpeaking = true;
@@ -2511,7 +2518,7 @@ async function sendVoiceMessage(text) {
   if (tz) tz.classList.remove('show');
 
   try {
-    const res = await fetch('/chat/' + voiceConvId, {
+    const res = await fetch('https://zeno-ia.onrender.com/chat/' + voiceConvId, {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({message: text, mode:'fast', voice:true})
     });

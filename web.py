@@ -476,12 +476,17 @@ def chat(cid):
         base_messages.append({"role": "user" if m["role"] == "user" else "assistant", "content": m["text"]})
     base_messages.append({"role": "user", "content": message})
 
-    # Recherche web sur toutes les questions (sauf code pur et questions très courtes)
+    # Recherche web sur les questions factuelles
     if len(message.strip()) > 12 and not message.strip().startswith("```"):
-        search_results = do_web_search(message[:200])
-        if search_results and "Aucun résultat" not in search_results and "impossible" not in search_results.lower():
-            base_messages[0] = dict(base_messages[0])
-            base_messages[0]["content"] += f"\n\nInformations web actuelles (utilise-les si pertinentes pour répondre):\n{search_results}"
+        try:
+            search_results = do_web_search(message[:150])
+            if search_results and len(search_results) > 10:
+                # Limite la taille et nettoie
+                search_results = search_results[:800].replace("\x00", "")
+                base_messages[0] = dict(base_messages[0])
+                base_messages[0]["content"] += f"\n\nInfo web: {search_results}"
+        except:
+            pass  # Si la recherche échoue, on continue sans
 
     # No-stream fallback (called when SSE fails on client)
     no_stream = request.json.get("no_stream", False)

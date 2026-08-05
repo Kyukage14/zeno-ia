@@ -1503,9 +1503,14 @@ let sidebarOpen  = true;
 let currentUser  = null;
 let currentTheme = 'dark';
 let pendingAttachments = [];
-let deletedIds = new Set(); // IDs supprimés localement
+let deletedIds = new Set();
 let pendingTheme    = localStorage.getItem('zeno-theme') || 'dark';
 let pendingFontSize = localStorage.getItem('zeno-fontsize') || 'md';
+
+// Détecte si on est dans Capacitor (app mobile) ou sur le web
+const IS_CAPACITOR = window.location.protocol === 'capacitor:' || 
+                     window.location.hostname === 'localhost' && window.Capacitor;
+const API = IS_CAPACITOR ? 'https://zeno-ia.onrender.com' : '';
 
 /* ═══════════════════════════════════════════
    INIT
@@ -1529,7 +1534,7 @@ async function init() {
 ═══════════════════════════════════════════ */
 async function loadUser() {
   try {
-    const res  = await fetch('https://zeno-ia.onrender.com/me');
+    const res  = await fetch(API + '/me');
     if (!res.ok) { window.location.replace('/'); return; }
     const data = await res.json();
     if (!data.ok) { window.location.replace('/'); return; }
@@ -1537,7 +1542,7 @@ async function loadUser() {
     applyUserUI(data);
   } catch(e) {
     try {
-      const res2  = await fetch('https://zeno-ia.onrender.com/me');
+      const res2  = await fetch(API + '/me');
       const data2 = await res2.json();
       if (!data2.ok) { window.location.replace('/'); return; }
       currentUser = data2;
@@ -1632,7 +1637,7 @@ window.addEventListener('resize', function() {
 ═══════════════════════════════════════════ */
 async function loadConvs() {
   try {
-    const res  = await fetch('https://zeno-ia.onrender.com/conversations');
+    const res  = await fetch(API + '/conversations');
     const data = await res.json();
     // Filtre les IDs supprimés localement pour éviter qu'ils réapparaissent
     allConvs = data.conversations.filter(conv => !deletedIds.has(conv.id));
@@ -1696,7 +1701,7 @@ function filterConvs(q) {
 }
 
 async function newChat() {
-  const res = await fetch('https://zeno-ia.onrender.com/new', { method: 'POST' });
+  const res = await fetch(API + '/new', { method: 'POST' });
   const d   = await res.json();
   currentId = d.id;
   document.getElementById('msg-wrap').innerHTML = '';
@@ -1716,7 +1721,7 @@ async function newChat() {
 
 async function openChat(id) {
   currentId = id;
-  const res  = await fetch('https://zeno-ia.onrender.com/conversation/' + id);
+  const res  = await fetch(API + '/conversation/' + id);
   const data = await res.json();
   document.getElementById('msg-wrap').innerHTML    = '';
   document.getElementById('welcome').style.display = 'none';
@@ -1742,7 +1747,7 @@ async function send() {
   if (!msg && pendingAttachments.length === 0) return;
 
   if (!currentId) {
-    const r = await fetch('https://zeno-ia.onrender.com/new', { method: 'POST' });
+    const r = await fetch(API + '/new', { method: 'POST' });
     const d = await r.json();
     currentId = d.id;
     await loadConvs();
@@ -1790,7 +1795,7 @@ async function send() {
     try {
       document.getElementById('thinking').style.display = 'block';
       aiDiv.style.display = 'none';
-      const r2   = await fetch('https://zeno-ia.onrender.com/chat/' + currentId, {
+      const r2   = await fetch(API + '/chat/' + currentId, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: fullMessage, mode, no_stream: true })
       });
@@ -1811,7 +1816,7 @@ async function send() {
   }
 
   try {
-    const res = await fetch('https://zeno-ia.onrender.com/chat/' + currentId, {
+    const res = await fetch(API + '/chat/' + currentId, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: fullMessage, mode })
     });
@@ -1956,7 +1961,7 @@ async function deleteChat(e, id) {
 
     // 3. Supprime côté serveur en arrière-plan
     // NE PAS recharger depuis le serveur après — la liste locale est déjà correcte
-    fetch('https://zeno-ia.onrender.com/delete/' + id, { method: 'POST' })
+    fetch(API + '/delete/' + id, { method: 'POST' })
       .catch(err => console.error('Delete error:', err));
   });
 }
@@ -1995,7 +2000,7 @@ function toggleAccount() {
 
 function doLogout() {
   showConfirm('Se déconnecter ?', 'Tu devras te reconnecter pour accéder à Zeno.', async () => {
-    await fetch('https://zeno-ia.onrender.com/logout', { method: 'POST' });
+    await fetch(API + '/logout', { method: 'POST' });
     window.location.replace('/');
   });
 }
@@ -2099,7 +2104,7 @@ async function generateImage() {
   document.getElementById('gen-prompt').value = '';
 
   if (!currentId) {
-    const r = await fetch('https://zeno-ia.onrender.com/new', { method: 'POST' });
+    const r = await fetch(API + '/new', { method: 'POST' });
     const d = await r.json();
     currentId = d.id;
     await loadConvs();
@@ -2382,7 +2387,7 @@ function openVoiceCall() {
   startWaveIdle();
   setVoiceStatus('idle', 'Appuie sur le micro pour parler');
   if (synth) synth.getVoices();
-  fetch('https://zeno-ia.onrender.com/new', { method: 'POST' })
+  fetch(API + '/new', { method: 'POST' })
     .then(r => r.json())
     .then(d => { voiceConvId = d.id; })
     .catch(() => { voiceConvId = currentId; });
@@ -2507,7 +2512,7 @@ function stopListening() {
 /* ── SEND ── */
 async function sendVoiceMessage(text) {
   if (!voiceConvId) {
-    try { const r = await fetch('https://zeno-ia.onrender.com/new',{method:'POST'}); const d = await r.json(); voiceConvId = d.id; }
+    try { const r = await fetch(API + '/new',{method:'POST'}); const d = await r.json(); voiceConvId = d.id; }
     catch(e) { setVoiceStatus('idle','Pas de connexion'); return; }
   }
   isSpeaking = true;
@@ -2518,7 +2523,7 @@ async function sendVoiceMessage(text) {
   if (tz) tz.classList.remove('show');
 
   try {
-    const res = await fetch('https://zeno-ia.onrender.com/chat/' + voiceConvId, {
+    const res = await fetch(API + '/chat/' + voiceConvId, {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({message: text, mode:'fast', voice:true})
     });

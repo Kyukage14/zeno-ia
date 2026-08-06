@@ -476,17 +476,8 @@ def chat(cid):
         base_messages.append({"role": "user" if m["role"] == "user" else "assistant", "content": m["text"]})
     base_messages.append({"role": "user", "content": message})
 
-    # Recherche web sur les questions factuelles
-    if len(message.strip()) > 12 and not message.strip().startswith("```"):
-        try:
-            search_results = do_web_search(message[:150])
-            if search_results and len(search_results) > 10:
-                # Limite la taille et nettoie
-                search_results = search_results[:800].replace("\x00", "")
-                base_messages[0] = dict(base_messages[0])
-                base_messages[0]["content"] += f"\n\nInfo web: {search_results}"
-        except:
-            pass  # Si la recherche échoue, on continue sans
+    # Recherche web désactivée temporairement (cause des erreurs 400 Groq)
+    # TODO: réactiver avec une meilleure API de recherche
 
     # No-stream fallback (called when SSE fails on client)
     no_stream = request.json.get("no_stream", False)
@@ -516,9 +507,19 @@ def chat(cid):
             save_data(data)
             yield f"data: {json.dumps({'done': True, 'title': conv['title']})}\n\n"
         except Exception as e:
-            error_msg = f"Erreur: {str(e)}"
-            yield f"data: {json.dumps({'token': error_msg})}\n\n"
-            yield f"data: {json.dumps({'done': True, 'title': conv.get('title', 'Conversation')})}\n\n"
+            # En cas d'erreur streaming, tente une réponse simple
+            try:
+                fallback = call_ai(base_messages, mode)
+                conv["messages"].append({"role": "assistant", "text": fallback})
+                if len(conv["messages"]) == 2:
+                    conv["title"] = generate_title(message, fallback)
+                save_data(data)
+                yield f"data: {json.dumps({'token': fallback})}\n\n"
+                yield f"data: {json.dumps({'done': True, 'title': conv['title']})}\n\n"
+            except Exception as e2:
+                error_msg = f"Désolé, une erreur est survenue. Réessaie."
+                yield f"data: {json.dumps({'token': error_msg})}\n\n"
+                yield f"data: {json.dumps({'done': True, 'title': conv.get('title', 'Conversation')})}\n\n"
 
     return Response(
         stream_with_context(generate()),
@@ -532,6 +533,14 @@ def delete(cid):
         del data[cid]
         save_data(data)
     return jsonify({"ok": True})
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({"error": "Not found", "ok": False}), 404
+
+@app.errorhandler(500)
+def server_error(e):
+    return jsonify({"error": str(e), "ok": False}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

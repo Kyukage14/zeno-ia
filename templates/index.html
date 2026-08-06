@@ -1503,7 +1503,14 @@ let sidebarOpen  = true;
 let currentUser  = null;
 let currentTheme = 'dark';
 let pendingAttachments = [];
-let deletedIds = new Set();
+// Charge les IDs supprimés depuis localStorage pour persister entre sessions
+let deletedIds = new Set(JSON.parse(localStorage.getItem('zeno-deleted-ids') || '[]'));
+
+function saveDeletedIds() {
+  // Garde seulement les 100 derniers pour éviter de saturer localStorage
+  const arr = Array.from(deletedIds).slice(-100);
+  localStorage.setItem('zeno-deleted-ids', JSON.stringify(arr));
+}
 let pendingTheme    = localStorage.getItem('zeno-theme') || 'dark';
 let pendingFontSize = localStorage.getItem('zeno-fontsize') || 'md';
 
@@ -1637,13 +1644,15 @@ window.addEventListener('resize', function() {
 ═══════════════════════════════════════════ */
 async function loadConvs() {
   try {
-    const res  = await fetch(API + '/conversations');
+    const res = await fetch(API + '/conversations');
+    if (!res.ok) { console.warn('loadConvs: HTTP ' + res.status); return; }
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) { console.warn('loadConvs: pas du JSON'); return; }
     const data = await res.json();
-    // Filtre les IDs supprimés localement pour éviter qu'ils réapparaissent
-    allConvs = data.conversations.filter(conv => !deletedIds.has(conv.id));
+    allConvs = (data.conversations || []).filter(conv => !deletedIds.has(conv.id));
     renderConvs(allConvs);
   } catch(e) {
-    console.error('loadConvs error:', e);
+    console.warn('loadConvs non-bloquant:', e.message);
   }
 }
 
@@ -1947,6 +1956,7 @@ async function deleteChat(e, id) {
   showConfirm('Supprimer cette conversation ?', 'Cette action est irréversible.', async () => {
     // 1. Supprime visuellement IMMÉDIATEMENT et de façon définitive
     deletedIds.add(id); // Marque comme supprimé avant tout rechargement
+    saveDeletedIds(); // Persiste dans localStorage
     allConvs = allConvs.filter(conv => conv.id !== id);
     renderConvs(allConvs);
 

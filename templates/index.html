@@ -1876,8 +1876,22 @@ async function send() {
                 pre.style.position = 'relative'; pre.appendChild(btn);
               }
             });
-            await loadConvs();
-            if (payload.title) document.getElementById('chat-header-title').textContent = payload.title;
+            // Met à jour le titre immédiatement sans recharger toute la liste
+            if (payload.title) {
+              document.getElementById('chat-header-title').textContent = payload.title;
+              // Met à jour le titre dans allConvs localement sans fetch
+              const convIdx = allConvs.findIndex(conv => conv.id === currentId);
+              if (convIdx !== -1) {
+                allConvs[convIdx].title = payload.title;
+                renderConvs(allConvs);
+              } else {
+                // Première conv - ajoute à la liste locale
+                allConvs.unshift({ id: currentId, title: payload.title, date: new Date().toISOString() });
+                renderConvs(allConvs);
+              }
+            }
+            // Recharge depuis serveur après un délai pour ne pas interrompre le stream
+            setTimeout(() => loadConvs(), 1000);
           }
         } catch(e) {}
       }

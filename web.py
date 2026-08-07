@@ -473,8 +473,25 @@ def chat(cid):
     msgs_to_send = list(messages if False else [])
     base_messages = [{"role": "system", "content": ZENO_SYSTEM + f"\n\n{mode_instr}"}]
     for m in conv["messages"][:-1]:
-        base_messages.append({"role": "user" if m["role"] == "user" else "assistant", "content": m["text"]})
-    base_messages.append({"role": "user", "content": message})
+        text = (m.get("text") or "").strip()
+        if text:  # Ignore messages vides
+            base_messages.append({
+                "role": "user" if m["role"] == "user" else "assistant",
+                "content": text
+            })
+    base_messages.append({"role": "user", "content": (message or "").strip()})
+    
+    # S'assure que les messages alternent bien user/assistant (requis par Groq)
+    cleaned = [base_messages[0]]  # garde le system
+    last_role = "system"
+    for msg in base_messages[1:]:
+        if msg["role"] != last_role:
+            cleaned.append(msg)
+            last_role = msg["role"]
+        elif msg["role"] == "user":
+            # Fusionne deux messages user consécutifs
+            cleaned[-1]["content"] += "\n" + msg["content"]
+    base_messages = cleaned
 
     # Recherche web désactivée temporairement (cause des erreurs 400 Groq)
     # TODO: réactiver avec une meilleure API de recherche
